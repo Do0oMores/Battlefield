@@ -1,0 +1,6 @@
+name: Battlefield
+version: '1.0-SNAPSHOT'
+main: top.mores.battlefield.Battlefield
+api-version: '1.18'
+authors: [ Mores ]
+description: battle field
