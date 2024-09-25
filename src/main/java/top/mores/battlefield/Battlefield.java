@@ -2,7 +2,7 @@ package top.mores.battlefield;
 
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
-import top.mores.battlefield.Command.MainCommand;
+import top.mores.battlefield.commands.MainCommand;
 
 import java.io.File;
 import java.util.Objects;
