@@ -19,7 +19,7 @@ public class BF_Class {
     private final ItemStack[] armors;
 
     private static final Map<String, BF_Class> globals = new HashMap<>();
-    private static final List<Material> OTHER_HELMET_LIST=asList(Material.PUMPKIN, Material.JACK_O_LANTERN, Material.PLAYER_HEAD);
+    private static final List<Material> OTHER_HELMET_LIST = asList(Material.PUMPKIN, Material.JACK_O_LANTERN, Material.PLAYER_HEAD);
 
     public BF_Class(String name, ItemStack[] items, ItemStack offHand, ItemStack[] armors) {
         this.name = name;
@@ -87,7 +87,7 @@ public class BF_Class {
         }
     }
 
-    public void equip(final Player player){
+    public void equip(final Player player) {
         for (ItemStack item : this.armors) {
             if (item != null) {
                 equipArmor(item, player.getInventory());
@@ -97,9 +97,9 @@ public class BF_Class {
             if (item == null) {
                 continue;
             }
-            if (whetherArmorItem(item.getType())){
+            if (whetherArmorItem(item.getType())) {
                 equipArmor(item, player.getInventory());
-            }else{
+            } else {
                 player.getInventory().addItem(item);
             }
         }

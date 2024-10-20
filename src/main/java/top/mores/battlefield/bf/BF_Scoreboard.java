@@ -20,14 +20,14 @@ public class BF_Scoreboard {
     public void initScoreboard() {
         this.initCommandScoreboard(true);
 
-        String sbHeaderPrefix=ChatColor.GREEN+"Battlefield"+ChatColor.RESET+" - "+ChatColor.YELLOW;
-        String sbHeaderName=sbHeaderPrefix+this.arena.getName();
+        String sbHeaderPrefix = ChatColor.GREEN + "Battlefield" + ChatColor.RESET + " - " + ChatColor.YELLOW;
+        String sbHeaderName = sbHeaderPrefix + this.arena.getName();
 
-        if (sbHeaderName.length()>32) {
-            if (this.arena.getPrefix().length()<=14){
-                sbHeaderName=sbHeaderPrefix+this.arena.getPrefix();
-            }else {
-                sbHeaderName=sbHeaderName.substring(0,32);
+        if (sbHeaderName.length() > 32) {
+            if (this.arena.getPrefix().length() <= 14) {
+                sbHeaderName = sbHeaderPrefix + this.arena.getPrefix();
+            } else {
+                sbHeaderName = sbHeaderName.substring(0, 32);
             }
         }
         //
