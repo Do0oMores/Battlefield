@@ -96,6 +96,13 @@ public final class BattlefieldHudOverlay {
             // 点位字母（居中）
             int lw = mc.font.width(p.id);
             g.drawString(mc.font, p.id, cx - lw / 2, cy - 4, WHITE, true);
+            g.drawString(
+                    mc.font,
+                    String.format("%d", p.progress),
+                    cx - 6, cy + 6,
+                    0xFFFFFFAA,
+                    true
+            );
 
             // 点内人数条 + 彩色 “4:1”（我方=蓝、敌方=红）
             int blueCount = (ClientGameState.myTeam == 0) ? p.attackersIn : p.defendersIn;
@@ -198,7 +205,7 @@ public final class BattlefieldHudOverlay {
         int totalW = wLeft + wMid + wRight;
 
         int x = cx - totalW / 2;
-        g.drawString(mc.font, left,  x,                yText, BLUE, true);
+        g.drawString(mc.font, left,  x,yText, BLUE, true);
         g.drawString(mc.font, mid,   x + wLeft,        yText, WHITE, true);
         g.drawString(mc.font, right, x + wLeft + wMid, yText, RED, true);
     }

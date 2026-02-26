@@ -31,6 +31,7 @@ import net.minecraftforge.registries.RegistryObject;
 import org.slf4j.Logger;
 import top.mores.battlefield.command.BtCommands;
 import top.mores.battlefield.game.BattlefieldGameManager;
+import top.mores.battlefield.net.BattlefieldNet;
 
 // The value here should match an entry in the META-INF/mods.toml file
 @Mod(Battlefield.MODID)
@@ -85,6 +86,7 @@ public class Battlefield {
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
+        event.enqueueWork(BattlefieldNet::init);
         // Some common setup code
         LOGGER.info("HELLO FROM COMMON SETUP");
         LOGGER.info("DIRT BLOCK >> {}", ForgeRegistries.BLOCKS.getKey(Blocks.DIRT));

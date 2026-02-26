@@ -1,9 +1,12 @@
 package top.mores.battlefield.breakthrough;
 
+import top.mores.battlefield.team.TeamId;
+
 public class CapturePoint {
     public final String id;
     public final double x, y, z;
     public final double radius;
+    public TeamId owner = TeamId.DEFENDERS;
 
     // [-100..100]  默认守方控制
     private int progress = -100;

@@ -15,7 +15,9 @@ public class SectorManager {
     public static final int CAPTURE_INTERVAL_TICKS = 10; // 0.5s
 
     public static final int BASE_STEP = 4;   // 每 0.5s 最少推进 4
-    public static final int BONUS_STEP = 2;  // 人数差每多1人，额外+2
+    public static final int BONUS_STEP = 2;
+    public static final int EMPTY_DECAY_STEP=2;
+    public static final boolean DECAY_ON_TIE=false;
 
     public void tick(GameSession session) {
         if (!session.running) return;
@@ -53,42 +55,68 @@ public class SectorManager {
             TeamId team = TeamManager.getTeam(sp);
             if (team == TeamId.SPECTATOR) continue;
 
-            // TODO：接你后面的倒地系统时，把 DOWNED 排除
+            // TODO：倒地不计入占点
             // if (DownedManager.isDowned(sp)) continue;
 
             Vec3 pos = sp.position();
             double dx = pos.x - cx, dy = pos.y - cy, dz = pos.z - cz;
-            if (dx*dx + dy*dy + dz*dz > r2) continue;
+            if (dx * dx + dy * dy + dz * dz > r2) continue;
 
             if (team == TeamId.ATTACKERS) attackers++;
             else if (team == TeamId.DEFENDERS) defenders++;
         }
 
-        // debug 记录
+        // debug 记录（用于 HUD 的 4:1）
         point.lastAttackersIn = attackers;
         point.lastDefendersIn = defenders;
 
-        int delta = attackers - defenders;
-        int step = 0;
+        int old = point.getProgress();
 
-        if (attackers > defenders) {
-            int diff = attackers - defenders;
-            step = BASE_STEP + BONUS_STEP * (diff - 1); // 朝攻方方向推进（progress 增大）
-        } else if (defenders > attackers) {
-            int diff = defenders - attackers;
-            step = -(BASE_STEP + BONUS_STEP * (diff - 1)); // 朝守方方向推进（progress 减小）
+        // ① 点内无人：向“当前控制方 owner”回满（到 ±100）
+        if (attackers == 0 && defenders == 0) {
+            if (point.owner == TeamId.ATTACKERS) {
+                if (old < 100) point.setProgress(Math.min(100, old + EMPTY_DECAY_STEP));
+            } else if (point.owner == TeamId.DEFENDERS) {
+                if (old > -100) point.setProgress(Math.max(-100, old - EMPTY_DECAY_STEP));
+            }
+            return;
         }
 
-        if (step == 0) return;
+        // ② 人数相同：僵持（默认不动；若你想“僵持也慢慢回 owner”，打开 DECAY_ON_TIE）
+        if (attackers == defenders) {
+            if (DECAY_ON_TIE) {
+                if (point.owner == TeamId.ATTACKERS) {
+                    if (old < 100) point.setProgress(Math.min(100, old + 1));
+                } else if (point.owner == TeamId.DEFENDERS) {
+                    if (old > -100) point.setProgress(Math.max(-100, old - 1));
+                }
+            }
+            return;
+        }
 
-        int old = point.getProgress();
+        // ③ 人数严格占优的一方才推进（劣势只能减速）
+        int step;
+        if (attackers > defenders) {
+            int diff = attackers - defenders;
+            step = BASE_STEP + BONUS_STEP * (diff - 1);        // progress 增大：偏向 ATTACKERS
+        } else {
+            int diff = defenders - attackers;
+            step = -(BASE_STEP + BONUS_STEP * (diff - 1));     // progress 减小：偏向 DEFENDERS
+        }
+
         int now = clamp(old + step, -100, 100);
         point.setProgress(now);
 
-        // 首次攻方占满提示（可删）
-        if (!point.awardedCaptureScore && now >= 100) {
-            point.awardedCaptureScore = true;
-            broadcast(level, "攻方占领据点 " + point.id + "！");
+        // ④ 更新 owner：只有“满控”才改变当前控制方
+        if (now >= 100) {
+            point.owner = TeamId.ATTACKERS;
+            if (!point.awardedCaptureScore) {
+                point.awardedCaptureScore = true;
+                broadcast(level, "攻方占领据点 " + point.id + "！");
+            }
+        } else if (now <= -100) {
+            point.owner = TeamId.DEFENDERS;
+            // 若你也想给守方满控提示/加分，可以在这里加
         }
     }
 
