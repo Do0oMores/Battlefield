@@ -69,10 +69,15 @@ public class SectorManager {
         point.lastDefendersIn = defenders;
 
         int delta = attackers - defenders;
-        int step;
-        if (delta > 0) step = BASE_STEP + BONUS_STEP * (delta - 1);
-        else if (delta < 0) step = -(BASE_STEP + BONUS_STEP * (-delta - 1));
-        else step = 0;
+        int step = 0;
+
+        if (attackers > defenders) {
+            int diff = attackers - defenders;
+            step = BASE_STEP + BONUS_STEP * (diff - 1); // 朝攻方方向推进（progress 增大）
+        } else if (defenders > attackers) {
+            int diff = defenders - attackers;
+            step = -(BASE_STEP + BONUS_STEP * (diff - 1)); // 朝守方方向推进（progress 减小）
+        }
 
         if (step == 0) return;
 
