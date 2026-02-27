@@ -58,7 +58,7 @@ public final class ClientGameState {
                         net.minecraft.network.chat.Component.literal("CAPTURE TRIGGER: A" + p.id + " prog=" + p.progress + " last=" + last)
                 );
                 if (myTeam == 0) VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
-                else if (myTeam == 1) VoiceManager.play(ModSounds.VOICE_POINT_LOST_A.get());
+                else if (myTeam == 1) VoiceManager.play(ModSounds.VOICE_POINT_LOST.get());
             }
 
             if (last > -CAP_T && p.progress <= -CAP_T) {
@@ -66,7 +66,7 @@ public final class ClientGameState {
                         net.minecraft.network.chat.Component.literal("CAPTURE TRIGGER: B" + p.id + " prog=" + p.progress + " last=" + last)
                 );
                 if (myTeam == 1) VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
-                else if (myTeam == 0) VoiceManager.play(ModSounds.VOICE_POINT_LOST_A.get());
+                else if (myTeam == 0) VoiceManager.play(ModSounds.VOICE_POINT_LOST.get());
             }
         }
     }
@@ -74,16 +74,16 @@ public final class ClientGameState {
     public static void updateAreas(int newSectorIndex,
                                    List<S2CSectorAreaPacket.AreaCircle> atk,
                                    List<S2CSectorAreaPacket.AreaCircle> def) {
-        if (!inBattle) {
-            return;
-        }
 
         boolean changed = (newSectorIndex != sectorIndex);
         sectorIndex = newSectorIndex;
-        attackerAreas = (atk == null) ? Collections.emptyList() : atk;
-        defenderAreas = (def == null) ? Collections.emptyList() : def;
 
-        if (changed) {
+        attackerAreas = (atk == null) ? java.util.Collections.emptyList() : new java.util.ArrayList<>(atk);
+        defenderAreas = (def == null) ? java.util.Collections.emptyList() : new java.util.ArrayList<>(def);
+
+        inBattle = true;
+
+        if (changed && Minecraft.getInstance().player != null) {
             VoiceManager.play(ModSounds.VOICE_SECTOR_PUSH.get());
         }
     }

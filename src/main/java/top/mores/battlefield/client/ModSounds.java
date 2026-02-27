@@ -12,33 +12,32 @@ public final class ModSounds {
             DeferredRegister.create(ForgeRegistries.SOUND_EVENTS, Battlefield.MODID);
 
     public static final RegistryObject<SoundEvent> VOICE_MOBILIZE =
-            SOUND_EVENTS.register("voice_mobilize",
+            SOUND_EVENTS.register("voice.mobilize",
                     () -> SoundEvent.createVariableRangeEvent(id("voice.mobilize")));
 
-    public static final RegistryObject<SoundEvent> VOICE_POINT_LOST_A =
-            SOUND_EVENTS.register("voice_point_lost",
+    public static final RegistryObject<SoundEvent> VOICE_POINT_LOST =
+            SOUND_EVENTS.register("voice.point_lost",
                     () -> SoundEvent.createVariableRangeEvent(id("voice.point_lost")));
 
     public static final RegistryObject<SoundEvent> VOICE_POINT_CAPTURED =
-            SOUND_EVENTS.register("voice_point_captured",
+            SOUND_EVENTS.register("voice.point_captured",
                     () -> SoundEvent.createVariableRangeEvent(id("voice.point_captured")));
 
     public static final RegistryObject<SoundEvent> VOICE_SECTOR_PUSH =
-            SOUND_EVENTS.register("voice_sector_push",
+            SOUND_EVENTS.register("voice.sector_push",
                     () -> SoundEvent.createVariableRangeEvent(id("voice.sector_push")));
 
     public static final RegistryObject<SoundEvent> VOICE_VICTORY =
-            SOUND_EVENTS.register("voice_victory",
+            SOUND_EVENTS.register("voice.victory",
                     () -> SoundEvent.createVariableRangeEvent(id("voice.victory")));
 
     public static final RegistryObject<SoundEvent> VOICE_DEFEAT =
-            SOUND_EVENTS.register("voice_defeat",
+            SOUND_EVENTS.register("voice.defeat",
                     () -> SoundEvent.createVariableRangeEvent(id("voice.defeat")));
 
     private static ResourceLocation id(String path) {
         return new ResourceLocation(Battlefield.MODID, path);
     }
 
-    private ModSounds() {
-    }
+    private ModSounds() {}
 }

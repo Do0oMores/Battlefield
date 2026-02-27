@@ -14,26 +14,12 @@ public final class VoiceManager {
 
         long now = System.currentTimeMillis();
         if (se == lastSound && now - lastPlayMs < 1200) return;
-
         lastSound = se;
         lastPlayMs = now;
 
-        mc.execute(() -> {
-            // 用 VOICE 通道播放，而不是 UI
-            var inst = new net.minecraft.client.resources.sounds.SimpleSoundInstance(
-                    se.getLocation(),
-                    net.minecraft.sounds.SoundSource.VOICE,
-                    1.0f,  // volume
-                    1.0f,  // pitch
-                    net.minecraft.util.RandomSource.create(),
-                    false, // looping
-                    0,     // delay
-                    net.minecraft.client.resources.sounds.SoundInstance.Attenuation.NONE,
-                    0.0, 0.0, 0.0,
-                    true
-            );
-            mc.getSoundManager().play(inst);
-        });
+        mc.execute(() -> mc.getSoundManager().play(
+                net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(se, 1.0f)
+        ));
     }
 
     private VoiceManager() {

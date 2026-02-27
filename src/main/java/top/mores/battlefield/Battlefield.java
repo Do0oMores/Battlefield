@@ -1,6 +1,8 @@
 package top.mores.battlefield;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -13,6 +15,7 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.registries.ForgeRegistries;
 import org.slf4j.Logger;
 import top.mores.battlefield.client.ModSounds;
 import top.mores.battlefield.command.BtCommands;
@@ -64,6 +67,30 @@ public class Battlefield {
         @SubscribeEvent
         public static void onClientSetup(FMLClientSetupEvent event) {
             LOGGER.info("[{}] Client setup complete.", MODID);
+            event.enqueueWork(() -> {
+                var rl = new ResourceLocation("battlefield", "sounds.json");
+                boolean ok;
+                try {
+                    ok = Minecraft.getInstance()
+                            .getResourceManager()
+                            .getResource(rl)
+                            .isPresent();
+                } catch (Exception e) {
+                    ok = false;
+                }
+
+                System.out.println("[BT] has sounds.json = " + ok);
+            });
+        }
+    }
+
+    @Mod.EventBusSubscriber(modid = Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.MOD)
+    public class ModBusDebug {
+        @SubscribeEvent
+        public static void onRegisterSounds(net.minecraftforge.registries.RegisterEvent e) {
+            if (e.getRegistryKey().equals(ForgeRegistries.Keys.SOUND_EVENTS)) {
+                Battlefield.LOGGER.info("[BT] SoundEvent registry fired.");
+            }
         }
     }
 }
