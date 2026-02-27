@@ -6,9 +6,20 @@ public class Sector {
     public final String id; // "S1"
     public final List<CapturePoint> points;
 
-    public Sector(String id, List<CapturePoint> points) {
+    // ✅ 固定可活动区域（2D）
+    public final List<AreaCircle> attackerAreas;
+    public final List<AreaCircle> defenderAreas;
+
+    public record AreaCircle(double x, double z, double r) {}
+
+    public Sector(String id,
+                  List<CapturePoint> points,
+                  List<AreaCircle> attackerAreas,
+                  List<AreaCircle> defenderAreas) {
         this.id = id;
         this.points = points;
+        this.attackerAreas = attackerAreas;
+        this.defenderAreas = defenderAreas;
     }
 
     public boolean isClearedByAttackers() {

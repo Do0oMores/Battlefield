@@ -64,10 +64,10 @@ public final class BattlefieldAreaRenderer {
                         1.0f, 0.2f, 0.2f, 1.0f);
             }
 
-            // 可活动区域轮廓：只画贴地线，不再绘制立体柱体。
-            if (BattlefieldAreaRules.isPointInMovableRange(myTeam, point.progress)) {
-                drawGroundCircle(poseStack, lines, point.x, point.y + 0.05, point.z,
-                        point.radius * BattlefieldAreaRules.AREA_RADIUS_SCALE,
+            var myAreas = (myTeam == 0) ? ClientGameState.attackerAreas : ClientGameState.defenderAreas;
+            for (var c : myAreas) {
+                drawGroundCircle(poseStack, lines, c.x, mc.player.getY() + 0.05, c.z,
+                        c.r,
                         1.0f, 1.0f, 1.0f, 0.9f);
             }
         }
@@ -98,7 +98,7 @@ public final class BattlefieldAreaRenderer {
             return;
         }
 
-        if (BattlefieldAreaRules.isInsideMovableArea(myTeam, mc.player.getX(), mc.player.getZ(), points)) {
+        if (BattlefieldAreaRules.isInsideMovableArea(myTeam, mc.player.getX(), mc.player.getZ())) {
             outsideAreaTicks = 0;
         } else {
             outsideAreaTicks++;

@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
+import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
@@ -38,6 +39,10 @@ public class SectorManager {
         if (sector.isClearedByAttackers()) {
             session.currentSectorIndex++;
             broadcast(session.level, "攻方推进至下一战线！当前Index=" + session.currentSectorIndex);
+            Sector next = session.currentSector();
+            if (next != null) {
+                BattlefieldNet.sendSectorAreas(session.level, session.currentSectorIndex, next.attackerAreas, next.defenderAreas);
+            }
         }
     }
 
