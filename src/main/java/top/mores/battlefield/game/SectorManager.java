@@ -66,8 +66,8 @@ public class SectorManager {
             // if (DownedManager.isDowned(sp)) continue;
 
             Vec3 pos = sp.position();
-            double dx = pos.x - cx, dy = pos.y - cy, dz = pos.z - cz;
-            if (dx * dx + dy * dy + dz * dz > r2) continue;
+            double dx = pos.x - cx, dz = pos.z - cz;
+            if (dx * dx + dz * dz > r2) continue;
 
             if (team == TeamId.ATTACKERS) attackers++;
             else if (team == TeamId.DEFENDERS) defenders++;

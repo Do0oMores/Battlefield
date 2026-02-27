@@ -217,42 +217,6 @@ public final class BattlefieldHudOverlay {
         }
     }
 
-    /**
-     * 菱形下方的小进度条 + “蓝:红” 彩色数字
-     */
-    private static void drawUnderBarAndCount(GuiGraphics g, Minecraft mc, int cx, int cy, int size, int blueCount, int redCount) {
-        int barW = size * 2;
-        int barH = 2;
-        int barX = cx - barW / 2;
-        int barY = cy + size + 3;
-
-        int total = blueCount + redCount;
-        int blueW = (total <= 0) ? 0 : Mth.floor((blueCount / (float) total) * barW);
-
-        // 背景
-        g.fill(barX, barY, barX + barW, barY + barH, 0xAA000000);
-
-        // 蓝段 / 红段
-        if (blueW > 0) g.fill(barX, barY, barX + blueW, barY + barH, BLUE);
-        if (blueW < barW) g.fill(barX + blueW, barY, barX + barW, barY + barH, RED);
-
-        // 彩色 “4:1”
-        String left = String.valueOf(blueCount);
-        String mid = ":";
-        String right = String.valueOf(redCount);
-
-        int yText = barY + 3;
-        int wLeft = mc.font.width(left);
-        int wMid = mc.font.width(mid);
-        int wRight = mc.font.width(right);
-        int totalW = wLeft + wMid + wRight;
-
-        int x = cx - totalW / 2;
-        g.drawString(mc.font, left, x, yText, BLUE, true);
-        g.drawString(mc.font, mid, x + wLeft, yText, WHITE, true);
-        g.drawString(mc.font, right, x + wLeft + wMid, yText, RED, true);
-    }
-
     private static void drawUnderBarOnly(GuiGraphics g, int cx, int cy, int size, int blueCount, int redCount) {
         int barW = size * 2;
         int barH = 2;

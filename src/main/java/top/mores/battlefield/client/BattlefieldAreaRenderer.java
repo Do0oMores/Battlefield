@@ -34,9 +34,6 @@ public final class BattlefieldAreaRenderer {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
 
-        List<S2CGameStatePacket.PointInfo> points = ClientGameState.points;
-        if (points == null || points.isEmpty()) return;
-
         byte myTeam = ClientGameState.myTeam;
         if (myTeam != 0 && myTeam != 1) return;
 
@@ -47,26 +44,37 @@ public final class BattlefieldAreaRenderer {
 
         poseStack.pushPose();
         poseStack.translate(-cam.x, -cam.y, -cam.z);
+        double drawY = mc.player.getY() + 0.05;
 
-        for (S2CGameStatePacket.PointInfo point : points) {
-            boolean attackersOwned = point.progress >= 100;
-            boolean defendersOwned = point.progress <= -100;
-            boolean friendlyOwned = (myTeam == 0 && attackersOwned) || (myTeam == 1 && defendersOwned);
+        // ① 点位范围圈（可无 points 则不画）
+        List<S2CGameStatePacket.PointInfo> points = ClientGameState.points;
+        if (points != null && !points.isEmpty()) {
+            for (S2CGameStatePacket.PointInfo point : points) {
+                if (point == null) continue;
 
-            // 点位轮廓：贴地圆线。己方蓝色，敌方红色。
-            if (friendlyOwned) {
-                drawGroundCircle(poseStack, lines, point.x, point.y + 0.05, point.z,
-                        point.radius,
-                        0.2f, 0.5f, 1.0f, 1.0f);
-            } else {
-                drawGroundCircle(poseStack, lines, point.x, point.y + 0.05, point.z,
-                        point.radius,
-                        1.0f, 0.2f, 0.2f, 1.0f);
+                boolean attackersOwned = point.progress >= 100;
+                boolean defendersOwned = point.progress <= -100;
+                boolean friendlyOwned = (myTeam == 0 && attackersOwned) || (myTeam == 1 && defendersOwned);
+
+                // 点位轮廓：己方蓝，敌方红
+                if (friendlyOwned) {
+                    drawGroundCircle(poseStack, lines, point.x, drawY, point.z,
+                            point.radius,
+                            0.2f, 0.5f, 1.0f, 1.0f);
+                } else {
+                    drawGroundCircle(poseStack, lines, point.x, drawY, point.z,
+                            point.radius,
+                            1.0f, 0.2f, 0.2f, 1.0f);
+                }
             }
+        }
 
-            var myAreas = (myTeam == 0) ? ClientGameState.attackerAreas : ClientGameState.defenderAreas;
+        // ② 固定可活动区域白圈（只画一次，不依赖 points）
+        var myAreas = (myTeam == 0) ? ClientGameState.attackerAreas : ClientGameState.defenderAreas;
+        if (myAreas != null && !myAreas.isEmpty()) {
             for (var c : myAreas) {
-                drawGroundCircle(poseStack, lines, c.x, mc.player.getY() + 0.05, c.z,
+                if (c == null || c.r <= 0) continue;
+                drawGroundCircle(poseStack, lines, c.x, drawY, c.z,
                         c.r,
                         1.0f, 1.0f, 1.0f, 0.9f);
             }
@@ -92,8 +100,8 @@ public final class BattlefieldAreaRenderer {
             return;
         }
 
-        List<S2CGameStatePacket.PointInfo> points = ClientGameState.points;
-        if (points == null || points.isEmpty()) {
+        var myAreas = (myTeam == 0) ? ClientGameState.attackerAreas : ClientGameState.defenderAreas;
+        if (myAreas == null || myAreas.isEmpty()) {
             outsideAreaTicks = 0;
             return;
         }

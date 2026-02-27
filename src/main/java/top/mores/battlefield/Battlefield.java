@@ -44,7 +44,6 @@ public class Battlefield {
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
-        // 网络包注册建议 enqueueWork（你已经这么做了）
         event.enqueueWork(BattlefieldNet::init);
 
         LOGGER.info("[{}] Common setup complete.", MODID);
