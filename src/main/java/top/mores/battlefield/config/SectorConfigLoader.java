@@ -9,6 +9,7 @@ import top.mores.battlefield.breakthrough.Sector;
 
 import java.io.IOException;
 import java.io.Reader;
+import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -77,6 +78,7 @@ public final class SectorConfigLoader {
             // points
             List<CapturePoint> points = new ArrayList<>();
             for (PointJson p : s.points) {
+                if (p == null || p.id == null || p.id.isBlank() || p.radius <= 0) continue;
                 CapturePoint cp = new CapturePoint(
                         p.id,
                         p.x,
@@ -91,6 +93,7 @@ public final class SectorConfigLoader {
             List<Sector.AreaCircle> atkAreas = new ArrayList<>();
             if (s.attackerAreas != null) {
                 for (AreaJson a : s.attackerAreas) {
+                    if (a == null || a.r <= 0) continue;
                     atkAreas.add(new Sector.AreaCircle(a.x, a.z, a.r));
                 }
             }
@@ -99,9 +102,12 @@ public final class SectorConfigLoader {
             List<Sector.AreaCircle> defAreas = new ArrayList<>();
             if (s.defenderAreas != null) {
                 for (AreaJson a : s.defenderAreas) {
+                    if (a == null || a.r <= 0) continue;
                     defAreas.add(new Sector.AreaCircle(a.x, a.z, a.r));
                 }
             }
+
+            if (points.isEmpty()) continue;
 
             sectors.add(new Sector(s.id, points, atkAreas, defAreas));
         }

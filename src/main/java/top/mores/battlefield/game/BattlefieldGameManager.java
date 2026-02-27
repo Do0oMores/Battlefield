@@ -1,6 +1,7 @@
 package top.mores.battlefield.game;
 
 import net.minecraft.server.level.ServerLevel;
+import top.mores.battlefield.team.SquadManager;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -35,6 +36,22 @@ public final class BattlefieldGameManager {
         SESSION = session;
         tickCounter = 0;
         OUTSIDE_AREA_TICKS.clear();
+    }
+
+    public static boolean stopSession() {
+        if (SESSION == null || !SESSION.running) {
+            SESSION = null;
+            OUTSIDE_AREA_TICKS.clear();
+            return false;
+        }
+
+        ServerLevel level = SESSION.level;
+        SESSION.running = false;
+        SESSION = null;
+        tickCounter = 0;
+        OUTSIDE_AREA_TICKS.clear();
+        SquadManager.clearAll(level);
+        return true;
     }
 
     @SubscribeEvent

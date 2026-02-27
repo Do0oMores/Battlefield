@@ -9,8 +9,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.fml.loading.FMLPaths;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
+import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.game.GameSession;
 import top.mores.battlefield.team.SquadManager;
@@ -38,23 +40,46 @@ public final class BtCommands {
                                 return 0;
                             }
 
-                            Vec3 base = p.position();
-                            // A/B 两点：以玩家当前位置为中心偏移
-                            CapturePoint A = new CapturePoint("A", base.x + 8, base.y, base.z, 8);
-                            CapturePoint B = new CapturePoint("B", base.x - 8, base.y, base.z, 8);
+                            List<Sector> sectors = SectorConfigLoader.load(FMLPaths.CONFIGDIR.get().resolve("battlefield"));
+                            if (sectors.isEmpty()) {
+                                Vec3 base = p.position();
+                                CapturePoint A = new CapturePoint("A", base.x + 8, base.y, base.z, 8);
+                                CapturePoint B = new CapturePoint("B", base.x - 8, base.y, base.z, 8);
+                                sectors = List.of(new Sector("S1", List.of(A, B)));
+                                ctx.getSource().sendFailure(Component.literal("配置文件无可用扇区，已回退到临时A/B测试点。"));
+                            }
 
-                            Sector s1 = new Sector("S1", List.of(A, B));
-
-                            // Demo 只做一个扇区，你占完 A/B 就会显示“结束”
-                            GameSession session = new GameSession(level, List.of(s1));
+                            GameSession session = new GameSession(level, sectors);
                             BattlefieldGameManager.setSession(session);
                             SquadManager.resetForMatchStart(level);
 
+                            Sector first = session.currentSector();
+                            if (first != null) {
+                                top.mores.battlefield.net.BattlefieldNet.sendSectorAreas(
+                                        level,
+                                        session.currentSectorIndex,
+                                        first.attackerAreas,
+                                        first.defenderAreas
+                                );
+                            }
+
                             level.getServer().getPlayerList().broadcastSystemMessage(
-                                    Component.literal("[BT] 测试局已开始：在你附近生成据点 A/B（半径8），站上去即可推进。"),
+                                    Component.literal("[BT] 测试局已开始：已加载扇区=" + sectors.size() + "。"),
                                     false
                             );
 
+                            return 1;
+                        })
+                )
+
+                .then(Commands.literal("stop")
+                        .executes(ctx -> {
+                            boolean stopped = BattlefieldGameManager.stopSession();
+                            if (!stopped) {
+                                ctx.getSource().sendFailure(Component.literal("当前没有正在运行的对局。"));
+                                return 0;
+                            }
+                            ctx.getSource().sendSuccess(() -> Component.literal("已停止当前对局。"), true);
                             return 1;
                         })
                 )
