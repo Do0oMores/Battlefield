@@ -15,10 +15,10 @@ public final class ModSounds {
             SOUND_EVENTS.register("voice.mobilize", () -> SoundEvent.createVariableRangeEvent(id("voice.mobilize")));
 
     public static final RegistryObject<SoundEvent> VOICE_POINT_LOST_A =
-            SOUND_EVENTS.register("voice.point_lost", () -> SoundEvent.createVariableRangeEvent(id("voice.losingA")));
+            SOUND_EVENTS.register("voice.point_lost", () -> SoundEvent.createVariableRangeEvent(id("voice.point_lost")));
 
     public static final RegistryObject<SoundEvent> VOICE_POINT_CAPTURED =
-            SOUND_EVENTS.register("voice.point_captured", () -> SoundEvent.createVariableRangeEvent(id("voice.takenObjective")));
+            SOUND_EVENTS.register("voice.point_captured", () -> SoundEvent.createVariableRangeEvent(id("voice.point_captured")));
 
     public static final RegistryObject<SoundEvent> VOICE_SECTOR_PUSH =
             SOUND_EVENTS.register("voice.sector_push", () -> SoundEvent.createVariableRangeEvent(id("voice.sector_push")));
