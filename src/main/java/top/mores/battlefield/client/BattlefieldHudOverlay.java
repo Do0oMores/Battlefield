@@ -6,6 +6,7 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
+import top.mores.battlefield.game.BattlefieldAreaRules;
 import top.mores.battlefield.net.S2CGameStatePacket;
 
 import java.util.HashMap;
@@ -20,6 +21,7 @@ public final class BattlefieldHudOverlay {
     private static final int BLUE = 0xFF2E6BFF;
     private static final int RED = 0xFFFF3B30;
     private static final int WHITE = 0xFFFFFFFF;
+    private static final int WARNING_TEXT = 0xFFFF5555;
 
     // 方向判定的“死区”，避免抖动导致方向频繁翻转
     private static final float DIR_DEADZONE = 0.0035f;
@@ -124,6 +126,28 @@ public final class BattlefieldHudOverlay {
                 drawUnderBarOnly(g, cx, cy, size, blueCount, redCount);
             }
         }
+
+        renderOutsideAreaWarning(g, mc, screenWidth, screenHeight);
+    }
+
+    private static void renderOutsideAreaWarning(GuiGraphics g, Minecraft mc, int screenWidth, int screenHeight) {
+        if (!BattlefieldAreaRenderer.isOutsideMovableArea()) return;
+
+        g.fill(0, 0, screenWidth, screenHeight, 0x88000000);
+
+        String title = "您正在离开战斗区域";
+        int remainingTicks = Math.max(0, BattlefieldAreaRules.OUTSIDE_AREA_KILL_TICKS
+                - BattlefieldAreaRenderer.getOutsideAreaTicks());
+        int seconds = Mth.ceil(remainingTicks / 20.0f);
+        String countdown = seconds + " 秒";
+
+        int titleW = mc.font.width(title);
+        int cdW = mc.font.width(countdown);
+        int cx = screenWidth / 2;
+        int y = screenHeight / 2 - 12;
+
+        g.drawString(mc.font, title, cx - titleW / 2, y, WARNING_TEXT, true);
+        g.drawString(mc.font, countdown, cx - cdW / 2, y + 14, WHITE, true);
     }
 
     /**
