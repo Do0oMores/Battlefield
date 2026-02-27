@@ -7,12 +7,14 @@ import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import top.mores.battlefield.Battlefield;
+import top.mores.battlefield.game.BattlefieldAreaRules;
 import top.mores.battlefield.net.S2CGameStatePacket;
 
 import java.util.List;
@@ -23,7 +25,7 @@ public final class BattlefieldAreaRenderer {
     }
 
     private static final int SEGMENTS = 48;
-    private static final float AREA_RADIUS_SCALE = 1.6f;
+    private static int outsideAreaTicks = 0;
 
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
@@ -58,9 +60,11 @@ public final class BattlefieldAreaRenderer {
                 drawCylinderOutline(poseStack, lines, point.x, point.y, point.z, point.radius, 2.0, 1.0f, 0.2f, 0.2f, 1.0f);
             }
 
-            // 可活动区域轮廓：攻防可见范围不同。
-            if (isPointInMovableRange(myTeam, point)) {
-                drawCylinderOutline(poseStack, lines, point.x, point.y, point.z, point.radius * AREA_RADIUS_SCALE, 2.0, 1.0f, 1.0f, 1.0f, 0.9f);
+            // 可活动区域轮廓：只画贴地线，不再绘制立体柱体。
+            if (BattlefieldAreaRules.isPointInMovableRange(myTeam, point.progress)) {
+                drawGroundCircle(poseStack, lines, point.x, point.y + 0.05, point.z,
+                        point.radius * BattlefieldAreaRules.AREA_RADIUS_SCALE,
+                        1.0f, 1.0f, 1.0f, 0.9f);
             }
         }
 
@@ -68,13 +72,62 @@ public final class BattlefieldAreaRenderer {
         buffer.endBatch(RenderType.lines());
     }
 
-    /**
-     * 攻方：当前扇区全部点位均可活动。
-     * 守方：仅未被攻方完全占领的点位仍可活动。
-     */
-    private static boolean isPointInMovableRange(byte myTeam, S2CGameStatePacket.PointInfo point) {
-        if (myTeam == 0) return true;
-        return point.progress < 100;
+    @SubscribeEvent
+    public static void onClientTick(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null) {
+            outsideAreaTicks = 0;
+            return;
+        }
+
+        byte myTeam = ClientGameState.myTeam;
+        if (myTeam != 0 && myTeam != 1) {
+            outsideAreaTicks = 0;
+            return;
+        }
+
+        List<S2CGameStatePacket.PointInfo> points = ClientGameState.points;
+        if (points == null || points.isEmpty()) {
+            outsideAreaTicks = 0;
+            return;
+        }
+
+        if (BattlefieldAreaRules.isInsideMovableArea(myTeam, mc.player.getX(), mc.player.getZ(), points)) {
+            outsideAreaTicks = 0;
+        } else {
+            outsideAreaTicks++;
+        }
+    }
+
+    public static boolean isOutsideMovableArea() {
+        return outsideAreaTicks > 0;
+    }
+
+    public static int getOutsideAreaTicks() {
+        return outsideAreaTicks;
+    }
+
+    private static void drawGroundCircle(PoseStack poseStack, VertexConsumer vc,
+                                         double cx, double y, double cz,
+                                         double radius,
+                                         float r, float g, float b, float a) {
+        PoseStack.Pose pose = poseStack.last();
+        Matrix4f m4 = pose.pose();
+        Matrix3f m3 = pose.normal();
+
+        for (int i = 0; i < SEGMENTS; i++) {
+            double t0 = (Math.PI * 2.0 * i) / SEGMENTS;
+            double t1 = (Math.PI * 2.0 * (i + 1)) / SEGMENTS;
+
+            float x0 = (float) (cx + Math.cos(t0) * radius);
+            float z0 = (float) (cz + Math.sin(t0) * radius);
+            float x1 = (float) (cx + Math.cos(t1) * radius);
+            float z1 = (float) (cz + Math.sin(t1) * radius);
+
+            addLine(vc, m4, m3, x0, (float) y, z0, x1, (float) y, z1, r, g, b, a);
+        }
     }
 
     private static void drawCylinderOutline(PoseStack poseStack, VertexConsumer vc,
