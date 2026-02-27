@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
+import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 
@@ -25,6 +26,7 @@ public class SectorManager {
         Sector sector = session.currentSector();
         if (sector == null) {
             session.running = false;
+            SquadManager.clearAll(session.level);
             broadcast(session.level, "攻方已推进至最后战线，测试局结束！");
             return;
         }
