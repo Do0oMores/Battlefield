@@ -34,8 +34,9 @@ public final class BattlefieldAreaRenderer {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
 
+        if (!ClientGameState.inBattle) return;
+
         byte myTeam = ClientGameState.myTeam;
-        if (myTeam != 0 && myTeam != 1) return;
 
         Vec3 cam = event.getCamera().getPosition();
         PoseStack poseStack = event.getPoseStack();
@@ -94,11 +95,12 @@ public final class BattlefieldAreaRenderer {
             return;
         }
 
-        byte myTeam = ClientGameState.myTeam;
-        if (myTeam != 0 && myTeam != 1) {
+        if (!ClientGameState.inBattle) {
             outsideAreaTicks = 0;
             return;
         }
+
+        byte myTeam = ClientGameState.myTeam;
 
         var myAreas = (myTeam == 0) ? ClientGameState.attackerAreas : ClientGameState.defenderAreas;
         if (myAreas == null || myAreas.isEmpty()) {

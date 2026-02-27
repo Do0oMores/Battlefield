@@ -40,6 +40,11 @@ public final class BattlefieldHudOverlay {
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (player == null) return;
+        if (!ClientGameState.inBattle) {
+            LAST_BLUE_FRAC.clear();
+            LAST_DIR_CLOCKWISE.clear();
+            return;
+        }
 
         List<S2CGameStatePacket.PointInfo> pts = ClientGameState.points;
         if (pts == null || pts.isEmpty()) return;

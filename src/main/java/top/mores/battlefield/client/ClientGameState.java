@@ -13,6 +13,8 @@ public final class ClientGameState {
     private ClientGameState() {
     }
 
+    public static boolean inBattle = false;
+
     /**
      * 0=ATTACKERS 1=DEFENDERS 2=SPECTATOR
      */
@@ -26,10 +28,17 @@ public final class ClientGameState {
     public static int sectorIndex = 0;
 
     // 2D 可活动区域（固定圈）
-    public static List<top.mores.battlefield.net.S2CSectorAreaPacket.AreaCircle> attackerAreas = java.util.Collections.emptyList();
-    public static List<top.mores.battlefield.net.S2CSectorAreaPacket.AreaCircle> defenderAreas = java.util.Collections.emptyList();
+    public static List<S2CSectorAreaPacket.AreaCircle> attackerAreas = Collections.emptyList();
+    public static List<S2CSectorAreaPacket.AreaCircle> defenderAreas = Collections.emptyList();
 
-    public static void update(byte myTeam0, int atk, int def, List<S2CGameStatePacket.PointInfo> pts) {
+    public static void update(boolean inBattle0, byte myTeam0, int atk, int def, List<S2CGameStatePacket.PointInfo> pts) {
+        inBattle = inBattle0;
+
+        if (!inBattle) {
+            reset();
+            return;
+        }
+
         myTeam = myTeam0;
         attackerTickets = atk;
         defenderTickets = def;
@@ -65,13 +74,29 @@ public final class ClientGameState {
     public static void updateAreas(int newSectorIndex,
                                    List<S2CSectorAreaPacket.AreaCircle> atk,
                                    List<S2CSectorAreaPacket.AreaCircle> def) {
+        if (!inBattle) {
+            return;
+        }
+
         boolean changed = (newSectorIndex != sectorIndex);
         sectorIndex = newSectorIndex;
-        attackerAreas = (atk == null) ? java.util.Collections.emptyList() : atk;
-        defenderAreas = (def == null) ? java.util.Collections.emptyList() : def;
+        attackerAreas = (atk == null) ? Collections.emptyList() : atk;
+        defenderAreas = (def == null) ? Collections.emptyList() : def;
 
         if (changed) {
             VoiceManager.play(ModSounds.VOICE_SECTOR_PUSH.get());
         }
+    }
+
+    public static void reset() {
+        myTeam = 2;
+        attackerTickets = 0;
+        defenderTickets = -1;
+        points = Collections.emptyList();
+        attackerAreas = Collections.emptyList();
+        defenderAreas = Collections.emptyList();
+        sectorIndex = 0;
+        lastProgressById.clear();
+        deltaProgressById.clear();
     }
 }

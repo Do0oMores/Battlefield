@@ -61,6 +61,7 @@ public final class BattlefieldGameManager {
         tickCounter = 0;
         OUTSIDE_AREA_TICKS.clear();
         SquadManager.clearAll(level);
+        sendInactiveState(level);
         return true;
     }
 
@@ -100,7 +101,7 @@ public final class BattlefieldGameManager {
             TeamId t = TeamManager.getTeam(sp);
             byte myTeam = (byte) (t == TeamId.ATTACKERS ? 0 : (t == TeamId.DEFENDERS ? 1 : 2));
 
-            var pkt = new S2CGameStatePacket(myTeam, s.attackerTickets, -1, list);
+            var pkt = new S2CGameStatePacket(myTeam == 0 || myTeam == 1, myTeam, s.attackerTickets, -1, list);
             BattlefieldNet.CH.send(
                     net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
                     pkt
@@ -177,5 +178,12 @@ public final class BattlefieldGameManager {
         OUTSIDE_AREA_TICKS.clear();
 
         return newSectors.size();
+    }
+
+    private static void sendInactiveState(ServerLevel level) {
+        var resetPacket = new S2CGameStatePacket(false, (byte) 2, 0, -1, java.util.Collections.emptyList());
+        BattlefieldNet.sendToAllInLevel(level, resetPacket);
+        BattlefieldNet.sendToAllInLevel(level, new top.mores.battlefield.net.S2CSectorAreaPacket(0,
+                java.util.Collections.emptyList(), java.util.Collections.emptyList()));
     }
 }
