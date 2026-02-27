@@ -8,9 +8,12 @@ import java.util.List;
 import java.util.Map;
 
 public final class ClientGameState {
-    private ClientGameState(){}
+    private ClientGameState() {
+    }
 
-    /** 0=ATTACKERS 1=DEFENDERS 2=SPECTATOR */
+    /**
+     * 0=ATTACKERS 1=DEFENDERS 2=SPECTATOR
+     */
     public static byte myTeam = 2;
 
     public static int attackerTickets = 0;

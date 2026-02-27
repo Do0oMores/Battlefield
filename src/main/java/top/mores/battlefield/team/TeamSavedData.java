@@ -12,12 +12,13 @@ import java.util.Map;
 import java.util.UUID;
 
 public class TeamSavedData extends SavedData {
-    private static final String DATA_NAME="battlefield_teams";
-    private final Map<UUID,TeamId> teams=new HashMap<>();
+    private static final String DATA_NAME = "battlefield_teams";
+    private final Map<UUID, TeamId> teams = new HashMap<>();
 
-    public Map<UUID,TeamId> getTeams(){
+    public Map<UUID, TeamId> getTeams() {
         return teams;
     }
+
     public TeamId getTeam(UUID uuid) {
         return teams.getOrDefault(uuid, TeamId.SPECTATOR);
     }

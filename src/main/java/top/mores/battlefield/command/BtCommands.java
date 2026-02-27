@@ -18,7 +18,8 @@ import top.mores.battlefield.team.TeamManager;
 import java.util.List;
 
 public final class BtCommands {
-    private BtCommands() {}
+    private BtCommands() {
+    }
 
     public static void register(CommandDispatcher<CommandSourceStack> d) {
         d.register(Commands.literal("bt")
@@ -80,7 +81,7 @@ public final class BtCommands {
                                 sb.append("Point ").append(p.id)
                                         .append(" progress=").append(p.getProgress())
                                         .append(" in(A/D)=").append(p.lastAttackersIn).append("/").append(p.lastDefendersIn)
-                                        .append(" pos=(").append((int)p.x).append(",").append((int)p.y).append(",").append((int)p.z).append(")")
+                                        .append(" pos=(").append((int) p.x).append(",").append((int) p.y).append(",").append((int) p.z).append(")")
                                         .append("\n");
                             }
 

@@ -7,8 +7,8 @@ public class Sector {
     public final List<CapturePoint> points;
 
     public Sector(String id, List<CapturePoint> points) {
-        this.id=id;
-        this.points=points;
+        this.id = id;
+        this.points = points;
     }
 
     public boolean isClearedByAttackers() {

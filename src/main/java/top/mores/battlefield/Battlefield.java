@@ -123,7 +123,7 @@ public class Battlefield {
     }
 
     @SubscribeEvent
-    public void onRegisterCommands(RegisterCommandsEvent event){
+    public void onRegisterCommands(RegisterCommandsEvent event) {
         BtCommands.register(event.getDispatcher());
     }
 }

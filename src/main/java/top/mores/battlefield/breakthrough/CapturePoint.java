@@ -20,11 +20,15 @@ public class CapturePoint {
 
     public CapturePoint(String id, double x, double y, double z, double radius) {
         this.id = id;
-        this.x = x; this.y = y; this.z = z;
+        this.x = x;
+        this.y = y;
+        this.z = z;
         this.radius = radius;
     }
 
-    public int getProgress() { return progress; }
+    public int getProgress() {
+        return progress;
+    }
 
     public void setProgress(int v) {
         if (v > 100) v = 100;
@@ -32,5 +36,7 @@ public class CapturePoint {
         this.progress = v;
     }
 
-    public boolean isCapturedByAttackers() { return progress >= 100; }
+    public boolean isCapturedByAttackers() {
+        return progress >= 100;
+    }
 }

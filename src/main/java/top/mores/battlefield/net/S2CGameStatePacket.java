@@ -19,15 +19,21 @@ public class S2CGameStatePacket {
         public int attackersIn; // 点内攻方人数
         public int defendersIn; // 点内守方人数
 
-        public PointInfo(String id, double x, double y, double z, float radius, int progress, int attackersIn, int defendersIn){
-            this.id=id; this.x=x; this.y=y; this.z=z; this.radius=radius;
-            this.progress=progress;
-            this.attackersIn=attackersIn;
-            this.defendersIn=defendersIn;
+        public PointInfo(String id, double x, double y, double z, float radius, int progress, int attackersIn, int defendersIn) {
+            this.id = id;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.radius = radius;
+            this.progress = progress;
+            this.attackersIn = attackersIn;
+            this.defendersIn = defendersIn;
         }
     }
 
-    /** 0=ATTACKERS 1=DEFENDERS 2=SPECTATOR */
+    /**
+     * 0=ATTACKERS 1=DEFENDERS 2=SPECTATOR
+     */
     public byte myTeam;
 
     public int attackerTickets;
@@ -66,14 +72,14 @@ public class S2CGameStatePacket {
 
         int n = buf.readVarInt();
         List<PointInfo> pts = new ArrayList<>(n);
-        for (int i=0;i<n;i++){
+        for (int i = 0; i < n; i++) {
             String id = buf.readUtf(8);
-            double x=buf.readDouble(), y=buf.readDouble(), z=buf.readDouble();
-            float r=buf.readFloat();
-            int prog=buf.readInt();
-            int aIn=buf.readVarInt();
-            int dIn=buf.readVarInt();
-            pts.add(new PointInfo(id,x,y,z,r,prog,aIn,dIn));
+            double x = buf.readDouble(), y = buf.readDouble(), z = buf.readDouble();
+            float r = buf.readFloat();
+            int prog = buf.readInt();
+            int aIn = buf.readVarInt();
+            int dIn = buf.readVarInt();
+            pts.add(new PointInfo(id, x, y, z, r, prog, aIn, dIn));
         }
         return new S2CGameStatePacket(myTeam, atk, def, pts);
     }

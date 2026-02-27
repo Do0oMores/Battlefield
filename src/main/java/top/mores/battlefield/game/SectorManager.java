@@ -16,8 +16,8 @@ public class SectorManager {
 
     public static final int BASE_STEP = 4;   // 每 0.5s 最少推进 4
     public static final int BONUS_STEP = 2;
-    public static final int EMPTY_DECAY_STEP=2;
-    public static final boolean DECAY_ON_TIE=false;
+    public static final int EMPTY_DECAY_STEP = 2;
+    public static final boolean DECAY_ON_TIE = false;
 
     public void tick(GameSession session) {
         if (!session.running) return;

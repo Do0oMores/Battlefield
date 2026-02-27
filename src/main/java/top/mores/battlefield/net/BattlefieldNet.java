@@ -6,7 +6,8 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import top.mores.battlefield.Battlefield;
 
 public final class BattlefieldNet {
-    private BattlefieldNet() {}
+    private BattlefieldNet() {
+    }
 
     private static final String PROTOCOL = "1";
     public static final SimpleChannel CH = NetworkRegistry.newSimpleChannel(

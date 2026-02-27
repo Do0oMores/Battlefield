@@ -6,7 +6,8 @@ import net.minecraft.server.level.ServerPlayer;
 import java.util.UUID;
 
 public final class TeamManager {
-    private TeamManager() {}
+    private TeamManager() {
+    }
 
     public static final int TEAM_CAP = 16;
 
@@ -32,7 +33,9 @@ public final class TeamManager {
         return ta != TeamId.SPECTATOR && ta == tb;
     }
 
-    /** 16v16 自动均衡分配：少人优先，满员则进另一队，两边满员则观战 */
+    /**
+     * 16v16 自动均衡分配：少人优先，满员则进另一队，两边满员则观战
+     */
     public static TeamId autoAssign(ServerPlayer p) {
         ServerLevel level = p.serverLevel();
         int atk = countTeam(level, TeamId.ATTACKERS);

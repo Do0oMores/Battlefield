@@ -12,7 +12,8 @@ import top.mores.battlefield.team.TeamManager;
 
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class BattlefieldGameManager {
-    private BattlefieldGameManager() {}
+    private BattlefieldGameManager() {
+    }
 
     public static GameSession SESSION;
 

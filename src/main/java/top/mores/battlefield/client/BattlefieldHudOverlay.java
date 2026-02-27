@@ -8,21 +8,33 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import top.mores.battlefield.net.S2CGameStatePacket;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class BattlefieldHudOverlay {
-    private BattlefieldHudOverlay(){}
+    private BattlefieldHudOverlay() {
+    }
 
     // 颜色：ARGB
-    private static final int BLUE  = 0xFF2E6BFF;
-    private static final int RED   = 0xFFFF3B30;
+    private static final int BLUE = 0xFF2E6BFF;
+    private static final int RED = 0xFFFF3B30;
     private static final int WHITE = 0xFFFFFFFF;
+
+    // 方向判定的“死区”，避免抖动导致方向频繁翻转
+    private static final float DIR_DEADZONE = 0.0035f;
+
+    // 点位id -> 上一帧蓝色占比
+    private static final Map<String, Float> LAST_BLUE_FRAC = new HashMap<>();
+    // 点位id -> 上一次使用的方向（true=顺时针）
+    private static final Map<String, Boolean> LAST_DIR_CLOCKWISE = new HashMap<>();
 
     public static void render(ForgeGui gui,
                               GuiGraphics g,
                               float partialTick,
                               int screenWidth,
                               int screenHeight) {
+
         Minecraft mc = Minecraft.getInstance();
         LocalPlayer player = mc.player;
         if (player == null) return;
@@ -34,8 +46,12 @@ public final class BattlefieldHudOverlay {
         int topY = 6;
         int centerX = screenWidth / 2;
 
-        // 票数显示（仅数字）
-        String tickets = String.valueOf(ClientGameState.attackerTickets);
+        // ✅ 票数显示：永远显示我方票数（蓝）
+        int myTickets = (ClientGameState.myTeam == 0)
+                ? ClientGameState.attackerTickets
+                : ClientGameState.defenderTickets;
+
+        String tickets = String.valueOf(myTickets);
         int tw = mc.font.width(tickets);
         g.drawString(mc.font, tickets, centerX - tw / 2, topY, WHITE, true);
 
@@ -52,76 +68,81 @@ public final class BattlefieldHudOverlay {
 
         for (int i = 0; i < count; i++) {
             S2CGameStatePacket.PointInfo p = pts.get(i);
+            if (p == null) continue;
 
-            int size = baseSize;
-            if (i == activeIndex) size = (int)(baseSize * 1.25);
+            // key 保护（可选）
+            String key = (p.id == null) ? ("#" + i) : p.id;
+
+            int size = (i == activeIndex) ? (int) (baseSize * 2f) : baseSize;
 
             int cx = startX + i * (baseSize * 2 + gap) + baseSize;
             int cy = diamondsY + baseSize;
 
-            // 进度 -> 攻方占比 0..1
+            // progress -> 攻方占比 0..1
             float attackersPct = (p.progress + 100) / 200f;
             attackersPct = Mth.clamp(attackersPct, 0f, 1f);
 
-            // 我方蓝：攻方(0)则蓝=攻方；守方(1)则蓝=守方
+            // ✅ 蓝永远代表我方：我是攻方 -> 蓝=攻方占比；我是守方 -> 蓝=守方占比
             float blueFrac = (ClientGameState.myTeam == 0) ? attackersPct : (1f - attackersPct);
             blueFrac = Mth.clamp(blueFrac, 0f, 1f);
 
-            // 本次进度变化量（用于判断顺/逆时针）
-            int dp = ClientGameState.deltaProgressById.getOrDefault(p.id, 0);
+            // ✅ 用 blueFrac 的变化决定顺/逆时针
+            float last = LAST_BLUE_FRAC.getOrDefault(key, blueFrac);
+            float dBlue = blueFrac - last;
+            LAST_BLUE_FRAC.put(key, blueFrac);
 
-            // 本次是否“朝蓝方方向变化”
-            boolean towardBlue;
-            if (ClientGameState.myTeam == 0) {          // 我是攻方：progress 增大 => 更蓝
-                towardBlue = dp > 0;
-            } else if (ClientGameState.myTeam == 1) {   // 我是守方：progress 减小 => 更蓝
-                towardBlue = dp < 0;
-            } else {                                     // 观战：不重要
-                towardBlue = dp != 0;
+            boolean clockwise = LAST_DIR_CLOCKWISE.getOrDefault(key, true);
+            if (dBlue > DIR_DEADZONE) {
+                clockwise = true;
+            } else if (dBlue < -DIR_DEADZONE) {
+                clockwise = false;
             }
-
-            // 反推恢复：蓝方正在变强，但目前蓝方仍落后(<50%) => 逆时针恢复
-            boolean counterClockwiseRecover = towardBlue && (blueFrac < 0.5f);
-            boolean clockwise = !counterClockwiseRecover;
+            LAST_DIR_CLOCKWISE.put(key, clockwise);
 
             // 画菱形（满蓝/满红/争夺扇形）
             if (blueFrac >= 0.999f) {
+                LAST_BLUE_FRAC.remove(key);
+                LAST_DIR_CLOCKWISE.remove(key);
                 drawDiamondSolid(g, cx, cy, size, BLUE);
             } else if (blueFrac <= 0.001f) {
+                LAST_BLUE_FRAC.remove(key);
+                LAST_DIR_CLOCKWISE.remove(key);
                 drawDiamondSolid(g, cx, cy, size, RED);
             } else {
                 drawDiamondRadialFill(g, cx, cy, size, BLUE, RED, blueFrac, clockwise);
             }
 
             // 点位字母（居中）
-            int lw = mc.font.width(p.id);
-            g.drawString(mc.font, p.id, cx - lw / 2, cy - 4, WHITE, true);
-            g.drawString(
-                    mc.font,
-                    String.format("%d", p.progress),
-                    cx - 6, cy + 6,
-                    0xFFFFFFAA,
-                    true
-            );
+            String label = (p.id == null) ? "?" : p.id;
+            int lw = mc.font.width(label);
+            g.drawString(mc.font, label, cx - lw / 2, cy - 4, WHITE, true);
 
             // 点内人数条 + 彩色 “4:1”（我方=蓝、敌方=红）
-            int blueCount = (ClientGameState.myTeam == 0) ? p.attackersIn : p.defendersIn;
-            int redCount  = (ClientGameState.myTeam == 0) ? p.defendersIn : p.attackersIn;
-            drawUnderBarAndCount(g, mc, cx, cy, size, blueCount, redCount);
+            if (i == activeIndex) {
+                int blueCount = (ClientGameState.myTeam == 0) ? p.attackersIn : p.defendersIn;
+                int redCount  = (ClientGameState.myTeam == 0) ? p.defendersIn : p.attackersIn;
+                drawUnderBarOnly(g, cx, cy, size, blueCount, redCount);
+            }
         }
     }
 
-    /** 返回玩家当前所在点（如多个点重叠，取最近的） */
+    /**
+     * 返回玩家当前所在点（如多个点重叠，取最近的）
+     * ✅ 改为水平距离判定（dx/dz），避免 y 高度导致误判
+     */
     private static int findActivePointIndex(Vec3 playerPos, List<S2CGameStatePacket.PointInfo> pts) {
         int best = -1;
         double bestDist2 = Double.MAX_VALUE;
+
         for (int i = 0; i < pts.size(); i++) {
             var p = pts.get(i);
+            if (p == null) continue;
+
             double dx = playerPos.x - p.x;
-            double dy = playerPos.y - p.y;
             double dz = playerPos.z - p.z;
-            double dist2 = dx*dx + dy*dy + dz*dz;
-            double r2 = (double)p.radius * (double)p.radius;
+            double dist2 = dx * dx + dz * dz;
+
+            double r2 = (double) p.radius * (double) p.radius;
             if (dist2 <= r2 && dist2 < bestDist2) {
                 bestDist2 = dist2;
                 best = i;
@@ -130,7 +151,9 @@ public final class BattlefieldHudOverlay {
         return best;
     }
 
-    /** 实心菱形 */
+    /**
+     * 实心菱形
+     */
     private static void drawDiamondSolid(GuiGraphics g, int cx, int cy, int size, int color) {
         for (int dy = -size; dy <= size; dy++) {
             int half = size - Math.abs(dy);
@@ -164,19 +187,15 @@ public final class BattlefieldHudOverlay {
                 double frac = ang / (Math.PI * 2.0);
                 if (frac < 0) frac += 1.0;
 
-                // 逆时针：镜像翻转
-                if (!clockwise) {
-                    frac = 1.0 - frac;
-                    if (frac >= 1.0) frac -= 1.0;
-                }
-
                 int color = (frac <= blueFrac) ? blueColor : redColor;
                 g.fill(x, y, x + 1, y + 1, color);
             }
         }
     }
 
-    /** 菱形下方的小进度条 + “蓝:红” 彩色数字 */
+    /**
+     * 菱形下方的小进度条 + “蓝:红” 彩色数字
+     */
     private static void drawUnderBarAndCount(GuiGraphics g, Minecraft mc, int cx, int cy, int size, int blueCount, int redCount) {
         int barW = size * 2;
         int barH = 2;
@@ -184,7 +203,7 @@ public final class BattlefieldHudOverlay {
         int barY = cy + size + 3;
 
         int total = blueCount + redCount;
-        int blueW = (total <= 0) ? 0 : Mth.floor((blueCount / (float)total) * barW);
+        int blueW = (total <= 0) ? 0 : Mth.floor((blueCount / (float) total) * barW);
 
         // 背景
         g.fill(barX, barY, barX + barW, barY + barH, 0xAA000000);
@@ -200,13 +219,30 @@ public final class BattlefieldHudOverlay {
 
         int yText = barY + 3;
         int wLeft = mc.font.width(left);
-        int wMid  = mc.font.width(mid);
-        int wRight= mc.font.width(right);
+        int wMid = mc.font.width(mid);
+        int wRight = mc.font.width(right);
         int totalW = wLeft + wMid + wRight;
 
         int x = cx - totalW / 2;
-        g.drawString(mc.font, left,  x,yText, BLUE, true);
-        g.drawString(mc.font, mid,   x + wLeft,        yText, WHITE, true);
+        g.drawString(mc.font, left, x, yText, BLUE, true);
+        g.drawString(mc.font, mid, x + wLeft, yText, WHITE, true);
         g.drawString(mc.font, right, x + wLeft + wMid, yText, RED, true);
+    }
+
+    private static void drawUnderBarOnly(GuiGraphics g, int cx, int cy, int size, int blueCount, int redCount) {
+        int barW = size * 2;
+        int barH = 2;
+        int barX = cx - barW / 2;
+        int barY = cy + size + 3;
+
+        int total = blueCount + redCount;
+        int blueW = (total <= 0) ? 0 : Mth.floor((blueCount / (float) total) * barW);
+
+        // 背景
+        g.fill(barX, barY, barX + barW, barY + barH, 0xAA000000);
+
+        // 蓝段 / 红段
+        if (blueW > 0) g.fill(barX, barY, barX + blueW, barY + barH, BLUE);
+        if (blueW < barW) g.fill(barX + blueW, barY, barX + barW, barY + barH, RED);
     }
 }
