@@ -28,10 +28,28 @@ public final class ClientGameState {
         defenderTickets = def;
         points = pts;
         deltaProgressById.clear();
+
         for (S2CGameStatePacket.PointInfo p : pts) {
             Integer last = lastProgressById.put(p.id, p.progress);
             int dp = (last == null) ? 0 : (p.progress - last);
             deltaProgressById.put(p.id, dp);
+
+            if (last == null) continue;
+
+            // 点位被攻方占满：
+            // - 攻方听到“占领点”
+            // - 守方在 A 点听到“失去A点”
+            if (last < 100 && p.progress >= 100) {
+                if (myTeam == 0) {
+                    VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
+                } else if (myTeam == 1 && isPointA(p.id)) {
+                    VoiceManager.play(ModSounds.VOICE_POINT_LOST_A.get());
+                }
+            }
         }
+    }
+
+    private static boolean isPointA(String pointId) {
+        return "A".equalsIgnoreCase(pointId);
     }
 }
