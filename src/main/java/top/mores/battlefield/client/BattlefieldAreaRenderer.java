@@ -53,11 +53,15 @@ public final class BattlefieldAreaRenderer {
             boolean defendersOwned = point.progress <= -100;
             boolean friendlyOwned = (myTeam == 0 && attackersOwned) || (myTeam == 1 && defendersOwned);
 
-            // 点位轮廓：己方蓝色，敌方红色。
+            // 点位轮廓：贴地圆线。己方蓝色，敌方红色。
             if (friendlyOwned) {
-                drawCylinderOutline(poseStack, lines, point.x, point.y, point.z, point.radius, 2.0, 0.2f, 0.5f, 1.0f, 1.0f);
+                drawGroundCircle(poseStack, lines, point.x, point.y + 0.05, point.z,
+                        point.radius,
+                        0.2f, 0.5f, 1.0f, 1.0f);
             } else {
-                drawCylinderOutline(poseStack, lines, point.x, point.y, point.z, point.radius, 2.0, 1.0f, 0.2f, 0.2f, 1.0f);
+                drawGroundCircle(poseStack, lines, point.x, point.y + 0.05, point.z,
+                        point.radius,
+                        1.0f, 0.2f, 0.2f, 1.0f);
             }
 
             // 可活动区域轮廓：只画贴地线，不再绘制立体柱体。
@@ -128,44 +132,6 @@ public final class BattlefieldAreaRenderer {
 
             addLine(vc, m4, m3, x0, (float) y, z0, x1, (float) y, z1, r, g, b, a);
         }
-    }
-
-    private static void drawCylinderOutline(PoseStack poseStack, VertexConsumer vc,
-                                            double cx, double cy, double cz,
-                                            double radius, double height,
-                                            float r, float g, float b, float a) {
-        PoseStack.Pose pose = poseStack.last();
-        Matrix4f m4 = pose.pose();
-        Matrix3f m3 = pose.normal();
-
-        for (int i = 0; i < SEGMENTS; i++) {
-            double t0 = (Math.PI * 2.0 * i) / SEGMENTS;
-            double t1 = (Math.PI * 2.0 * (i + 1)) / SEGMENTS;
-
-            float x0 = (float) (cx + Math.cos(t0) * radius);
-            float z0 = (float) (cz + Math.sin(t0) * radius);
-            float x1 = (float) (cx + Math.cos(t1) * radius);
-            float z1 = (float) (cz + Math.sin(t1) * radius);
-
-            // 底圈
-            addLine(vc, m4, m3, x0, (float) cy, z0, x1, (float) cy, z1, r, g, b, a);
-            // 顶圈
-            addLine(vc, m4, m3, x0, (float) (cy + height), z0, x1, (float) (cy + height), z1, r, g, b, a);
-        }
-
-        // 竖线（4个方向）
-        drawVerticalAtAngle(vc, m4, m3, cx, cy, cz, radius, 0, height, r, g, b, a);
-        drawVerticalAtAngle(vc, m4, m3, cx, cy, cz, radius, Math.PI * 0.5, height, r, g, b, a);
-        drawVerticalAtAngle(vc, m4, m3, cx, cy, cz, radius, Math.PI, height, r, g, b, a);
-        drawVerticalAtAngle(vc, m4, m3, cx, cy, cz, radius, Math.PI * 1.5, height, r, g, b, a);
-    }
-
-    private static void drawVerticalAtAngle(VertexConsumer vc, Matrix4f m4, Matrix3f m3,
-                                            double cx, double cy, double cz, double radius, double angle, double height,
-                                            float r, float g, float b, float a) {
-        float x = (float) (cx + Math.cos(angle) * radius);
-        float z = (float) (cz + Math.sin(angle) * radius);
-        addLine(vc, m4, m3, x, (float) cy, z, x, (float) (cy + height), z, r, g, b, a);
     }
 
     private static void addLine(VertexConsumer vc, Matrix4f m4, Matrix3f m3,
