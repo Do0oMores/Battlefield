@@ -1,5 +1,6 @@
 package top.mores.battlefield.client;
 
+import net.minecraft.client.Minecraft;
 import top.mores.battlefield.net.S2CGameStatePacket;
 
 import java.util.Collections;
@@ -39,12 +40,22 @@ public final class ClientGameState {
             // 点位被攻方占满：
             // - 攻方听到“占领点”
             // - 守方听到“失去点位”
-            if (last < 100 && p.progress >= 100) {
-                if (myTeam == 0) {
-                    VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
-                } else if (myTeam == 1) {
-                    VoiceManager.play(ModSounds.VOICE_POINT_LOST_A.get());
-                }
+            final int CAP_T = 99;
+            if (last < CAP_T && p.progress >= CAP_T) {
+                Minecraft.getInstance().player.sendSystemMessage(
+                        net.minecraft.network.chat.Component.literal("CAPTURE TRIGGER: A" + p.id + " prog=" + p.progress + " last=" + last)
+                );
+                if (myTeam == 0) VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
+                else if (myTeam == 1) VoiceManager.play(ModSounds.VOICE_POINT_LOST_A.get());
+            }
+
+// 守方占满：- 守方听“占领点” - 攻方听“失去点位”
+            if (last > -CAP_T && p.progress <= -CAP_T) {
+                Minecraft.getInstance().player.sendSystemMessage(
+                        net.minecraft.network.chat.Component.literal("CAPTURE TRIGGER: B" + p.id + " prog=" + p.progress + " last=" + last)
+                );
+                if (myTeam == 1) VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
+                else if (myTeam == 0) VoiceManager.play(ModSounds.VOICE_POINT_LOST_A.get());
             }
         }
     }

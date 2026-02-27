@@ -1,7 +1,6 @@
 package top.mores.battlefield.client;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.sounds.SoundEvent;
 
 public final class VoiceManager {
@@ -14,12 +13,27 @@ public final class VoiceManager {
         if (mc == null) return;
 
         long now = System.currentTimeMillis();
-        if (se == lastSound && now - lastPlayMs < 1200) return; // 同一条 1.2s 内不重复
+        if (se == lastSound && now - lastPlayMs < 1200) return;
 
         lastSound = se;
         lastPlayMs = now;
 
-        mc.execute(() -> mc.getSoundManager().play(SimpleSoundInstance.forUI(se, 1.0f)));
+        mc.execute(() -> {
+            // 用 VOICE 通道播放，而不是 UI
+            var inst = new net.minecraft.client.resources.sounds.SimpleSoundInstance(
+                    se.getLocation(),
+                    net.minecraft.sounds.SoundSource.VOICE,
+                    1.0f,  // volume
+                    1.0f,  // pitch
+                    net.minecraft.util.RandomSource.create(),
+                    false, // looping
+                    0,     // delay
+                    net.minecraft.client.resources.sounds.SoundInstance.Attenuation.NONE,
+                    0.0, 0.0, 0.0,
+                    true
+            );
+            mc.getSoundManager().play(inst);
+        });
     }
 
     private VoiceManager() {}
