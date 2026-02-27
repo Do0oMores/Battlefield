@@ -38,18 +38,14 @@ public final class ClientGameState {
 
             // 点位被攻方占满：
             // - 攻方听到“占领点”
-            // - 守方在 A 点听到“失去A点”
+            // - 守方听到“失去点位”
             if (last < 100 && p.progress >= 100) {
                 if (myTeam == 0) {
                     VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
-                } else if (myTeam == 1 && isPointA(p.id)) {
+                } else if (myTeam == 1) {
                     VoiceManager.play(ModSounds.VOICE_POINT_LOST_A.get());
                 }
             }
         }
-    }
-
-    private static boolean isPointA(String pointId) {
-        return "A".equalsIgnoreCase(pointId);
     }
 }
