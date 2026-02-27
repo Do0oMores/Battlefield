@@ -45,7 +45,13 @@ public final class BtCommands {
                                 Vec3 base = p.position();
                                 CapturePoint A = new CapturePoint("A", base.x + 8, base.y, base.z, 8);
                                 CapturePoint B = new CapturePoint("B", base.x - 8, base.y, base.z, 8);
-                                sectors = List.of(new Sector("S1", List.of(A, B)));
+                                List<Sector.AreaCircle> attackerAreas = List.of(
+                                        new Sector.AreaCircle(base.x + 24, base.z, 64)
+                                );
+                                List<Sector.AreaCircle> defenderAreas = List.of(
+                                        new Sector.AreaCircle(base.x - 24, base.z, 64)
+                                );
+                                sectors = List.of(new Sector("S1", List.of(A, B), attackerAreas, defenderAreas));
                                 ctx.getSource().sendFailure(Component.literal("配置文件无可用扇区，已回退到临时A/B测试点。"));
                             }
 
