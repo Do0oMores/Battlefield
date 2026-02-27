@@ -34,13 +34,15 @@ public class S2CGameStatePacket {
     /**
      * 0=ATTACKERS 1=DEFENDERS 2=SPECTATOR
      */
+    public boolean inBattle;
     public byte myTeam;
 
     public int attackerTickets;
     public int defenderTickets; // 不用可填 -1
     public List<PointInfo> points;
 
-    public S2CGameStatePacket(byte myTeam, int attackerTickets, int defenderTickets, List<PointInfo> points) {
+    public S2CGameStatePacket(boolean inBattle, byte myTeam, int attackerTickets, int defenderTickets, List<PointInfo> points) {
+        this.inBattle = inBattle;
         this.myTeam = myTeam;
         this.attackerTickets = attackerTickets;
         this.defenderTickets = defenderTickets;
@@ -48,6 +50,7 @@ public class S2CGameStatePacket {
     }
 
     public static void encode(S2CGameStatePacket msg, FriendlyByteBuf buf) {
+        buf.writeBoolean(msg.inBattle);
         buf.writeByte(msg.myTeam);
         buf.writeInt(msg.attackerTickets);
         buf.writeInt(msg.defenderTickets);
@@ -66,6 +69,7 @@ public class S2CGameStatePacket {
     }
 
     public static S2CGameStatePacket decode(FriendlyByteBuf buf) {
+        boolean inBattle = buf.readBoolean();
         byte myTeam = buf.readByte();
         int atk = buf.readInt();
         int def = buf.readInt();
@@ -81,13 +85,13 @@ public class S2CGameStatePacket {
             int dIn = buf.readVarInt();
             pts.add(new PointInfo(id, x, y, z, r, prog, aIn, dIn));
         }
-        return new S2CGameStatePacket(myTeam, atk, def, pts);
+        return new S2CGameStatePacket(inBattle, myTeam, atk, def, pts);
     }
 
     public static void handle(S2CGameStatePacket msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
             if (Minecraft.getInstance().player != null) {
-                ClientGameState.update(msg.myTeam, msg.attackerTickets, msg.defenderTickets, msg.points);
+                ClientGameState.update(msg.inBattle, msg.myTeam, msg.attackerTickets, msg.defenderTickets, msg.points);
             }
         });
         ctx.get().setPacketHandled(true);
