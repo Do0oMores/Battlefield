@@ -18,12 +18,17 @@ public final class TeamManager {
 
     public static void setTeam(ServerPlayer p, TeamId team) {
         ServerLevel level = p.serverLevel();
-        TeamSavedData.get(level).setTeam(p.getUUID(), team);
+        TeamSavedData data = TeamSavedData.get(level);
+        TeamId oldTeam = data.getTeam(p.getUUID());
+        data.setTeam(p.getUUID(), team);
+        SquadManager.onTeamChanged(p, oldTeam, team);
     }
 
     public static void clearTeam(ServerPlayer p) {
         ServerLevel level = p.serverLevel();
+        TeamId oldTeam = TeamSavedData.get(level).getTeam(p.getUUID());
         TeamSavedData.get(level).remove(p.getUUID());
+        SquadManager.onTeamChanged(p, oldTeam, TeamId.SPECTATOR);
     }
 
     public static boolean isSameTeam(ServerPlayer a, ServerPlayer b) {

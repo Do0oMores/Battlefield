@@ -1,6 +1,7 @@
 package top.mores.battlefield.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -12,6 +13,7 @@ import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.game.GameSession;
+import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 
@@ -46,6 +48,7 @@ public final class BtCommands {
                             // Demo 只做一个扇区，你占完 A/B 就会显示“结束”
                             GameSession session = new GameSession(level, List.of(s1));
                             BattlefieldGameManager.setSession(session);
+                            SquadManager.resetForMatchStart(level);
 
                             level.getServer().getPlayerList().broadcastSystemMessage(
                                     Component.literal("[BT] 测试局已开始：在你附近生成据点 A/B（半径8），站上去即可推进。"),
@@ -95,9 +98,68 @@ public final class BtCommands {
                         .executes(ctx -> {
                             ServerPlayer p = ctx.getSource().getPlayerOrException();
                             TeamId team = TeamManager.autoAssign(p);
-                            ctx.getSource().sendSuccess(() -> Component.literal("已加入队伍: " + team.name()), false);
+                            int squadId = SquadManager.getSquad(p);
+                            ctx.getSource().sendSuccess(() -> Component.literal("已加入队伍: " + team.name() + "，小队=" + squadId), false);
                             return 1;
                         })
+                )
+
+                .then(Commands.literal("squad")
+                        .then(Commands.literal("create")
+                                .executes(ctx -> {
+                                    ServerPlayer p = ctx.getSource().getPlayerOrException();
+                                    TeamId t = TeamManager.getTeam(p);
+                                    if (t == TeamId.SPECTATOR) {
+                                        ctx.getSource().sendFailure(Component.literal("观战玩家不能创建小队。先加入队伍。"));
+                                        return 0;
+                                    }
+
+                                    boolean ok = SquadManager.createSquad(p);
+                                    if (!ok) {
+                                        ctx.getSource().sendFailure(Component.literal("创建失败：已达到小队上限(16)。"));
+                                        return 0;
+                                    }
+
+                                    int squadId = SquadManager.getSquad(p);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("已创建并加入小队: " + squadId), false);
+                                    return 1;
+                                })
+                        )
+                        .then(Commands.literal("join")
+                                .then(Commands.argument("id", IntegerArgumentType.integer(1, SquadManager.TEAM_SQUAD_CAP))
+                                        .executes(ctx -> {
+                                            ServerPlayer p = ctx.getSource().getPlayerOrException();
+                                            int squadId = IntegerArgumentType.getInteger(ctx, "id");
+
+                                            boolean ok = SquadManager.joinSquad(p, squadId);
+                                            if (!ok) {
+                                                ctx.getSource().sendFailure(Component.literal("加入失败：小队不存在、已满员(4)或你当前为观战。"));
+                                                return 0;
+                                            }
+
+                                            ctx.getSource().sendSuccess(() -> Component.literal("已加入小队: " + squadId), false);
+                                            return 1;
+                                        })
+                                )
+                        )
+                        .then(Commands.literal("leave")
+                                .executes(ctx -> {
+                                    ServerPlayer p = ctx.getSource().getPlayerOrException();
+                                    int old = SquadManager.getSquad(p);
+                                    SquadManager.leaveSquad(p);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("已退出小队: " + old), false);
+                                    return 1;
+                                })
+                        )
+                        .then(Commands.literal("info")
+                                .executes(ctx -> {
+                                    ServerPlayer p = ctx.getSource().getPlayerOrException();
+                                    TeamId t = TeamManager.getTeam(p);
+                                    int sid = SquadManager.getSquad(p);
+                                    ctx.getSource().sendSuccess(() -> Component.literal("当前队伍=" + t.name() + "，小队=" + sid), false);
+                                    return 1;
+                                })
+                        )
                 )
 
                 // /bt team attackers|defenders|spectator
