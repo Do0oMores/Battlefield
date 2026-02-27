@@ -13,8 +13,9 @@ public final class BattlefieldAreaRules {
     public static final int OUTSIDE_AREA_KILL_TICKS = 200;
 
     public static boolean isPointInMovableRange(byte myTeam, int pointProgress) {
-        if (myTeam == 0) return true;
-        return pointProgress < 100;
+        if (myTeam == 0) return pointProgress > -100;
+        if (myTeam == 1) return pointProgress < 100;
+        return false;
     }
 
     public static boolean isInsideMovableArea(byte myTeam, double x, double z, List<S2CGameStatePacket.PointInfo> points) {
