@@ -233,6 +233,15 @@ public final class BtCommands {
                             return 1;
                         })
                 )
+                .then(Commands.literal("reload")
+                        .requires(s -> s.hasPermission(2))
+                        .executes(ctx -> {
+                            ServerLevel level = ctx.getSource().getLevel();
+                            int n = BattlefieldGameManager.reloadSectors(level);
+                            ctx.getSource().sendSuccess(() -> Component.literal("[BT] sectors.json 热重载完成，战线数=" + n), true);
+                            return 1;
+                        })
+                )
         );
     }
 }

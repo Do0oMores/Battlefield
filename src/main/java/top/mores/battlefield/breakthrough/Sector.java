@@ -6,7 +6,6 @@ public class Sector {
     public final String id; // "S1"
     public final List<CapturePoint> points;
 
-    // ✅ 固定可活动区域（2D）
     public final List<AreaCircle> attackerAreas;
     public final List<AreaCircle> defenderAreas;
 

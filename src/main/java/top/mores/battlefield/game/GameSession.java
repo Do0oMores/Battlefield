@@ -7,7 +7,7 @@ import java.util.List;
 
 public class GameSession {
     public final ServerLevel level;
-    public final List<Sector> sectors;
+    public List<Sector> sectors;
     public int currentSectorIndex = 0;
 
     public int attackerTickets = 300;
@@ -34,5 +34,16 @@ public class GameSession {
     public GameSession(ServerLevel serverLevel, List<Sector> sectors) {
         this.level = serverLevel;
         this.sectors = sectors;
+    }
+
+    public void setSectors(List<Sector> newSectors) {
+        this.sectors = newSectors;
+
+        if (currentSectorIndex < 0) currentSectorIndex = 0;
+        if (newSectors == null || newSectors.isEmpty()) {
+            currentSectorIndex = 0;
+            return;
+        }
+        if (currentSectorIndex >= newSectors.size()) currentSectorIndex = newSectors.size() - 1;
     }
 }

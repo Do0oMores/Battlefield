@@ -19,7 +19,8 @@ public final class SectorConfigLoader {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    private SectorConfigLoader() {}
+    private SectorConfigLoader() {
+    }
 
     // ===== JSON DTO（只用于反序列化） =====
 

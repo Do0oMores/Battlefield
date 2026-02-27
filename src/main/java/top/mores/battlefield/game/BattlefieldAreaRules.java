@@ -1,13 +1,14 @@
 package top.mores.battlefield.game;
 
 import top.mores.battlefield.breakthrough.CapturePoint;
+import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.client.ClientGameState;
-import top.mores.battlefield.net.S2CGameStatePacket;
 
 import java.util.List;
 
 public final class BattlefieldAreaRules {
-    private BattlefieldAreaRules() {}
+    private BattlefieldAreaRules() {
+    }
 
     public static final double AREA_RADIUS_SCALE = 1.6;
     public static final int OUTSIDE_AREA_KILL_TICKS = 200;
@@ -16,7 +17,7 @@ public final class BattlefieldAreaRules {
      * 只显示本方可活动区域：
      * - 攻方(0)：progress >= 0
      * - 守方(1)：progress <= 0
-     *
+     * <p>
      * 如果你希望 progress==0 两边都显示，把 >= / <= 保留；
      * 如果你希望 progress==0 两边都不显示，把它改成 > / <。
      */
@@ -48,6 +49,17 @@ public final class BattlefieldAreaRules {
             double dz = z - point.z;
             double radius = point.radius * AREA_RADIUS_SCALE;
             if (dx * dx + dz * dz <= radius * radius) return true;
+        }
+        return false;
+    }
+
+    public static boolean isInsideAreas2D(double x, double z, List<Sector.AreaCircle> areas) {
+        if (areas == null || areas.isEmpty()) return false;
+        for (Sector.AreaCircle c : areas) {
+            double dx = x - c.x();
+            double dz = z - c.z();
+            double r = c.r();
+            if (dx * dx + dz * dz <= r * r) return true;
         }
         return false;
     }

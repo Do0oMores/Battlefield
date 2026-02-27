@@ -12,7 +12,8 @@ import top.mores.battlefield.breakthrough.Sector;
 import java.util.List;
 
 public final class BattlefieldNet {
-    private BattlefieldNet() {}
+    private BattlefieldNet() {
+    }
 
     private static final String PROTOCOL = "1";
     public static final SimpleChannel CH = NetworkRegistry.newSimpleChannel(
@@ -42,28 +43,18 @@ public final class BattlefieldNet {
         );
     }
 
-    // ===== 发送工具 =====
     public static void sendToPlayer(ServerPlayer sp, Object pkt) {
         CH.send(PacketDistributor.PLAYER.with(() -> sp), pkt);
     }
 
-    public static void sendToAll(ServerLevel level, Object pkt) {
+    public static void sendToAllInLevel(ServerLevel level, Object pkt) {
         CH.send(PacketDistributor.DIMENSION.with(level::dimension), pkt);
     }
 
-    /**
-     * 推进/开局时调用：同步当前战线的固定可活动区域
-     */
     public static void sendSectorAreas(ServerLevel level, int sectorIndex,
-                                       List<Sector.AreaCircle> atk,
-                                       List<Sector.AreaCircle> def) {
-        List<S2CSectorAreaPacket.AreaCircle> atk2 = atk.stream()
-                .map(c -> new S2CSectorAreaPacket.AreaCircle(c.x(), c.z(), c.r()))
-                .toList();
-        List<S2CSectorAreaPacket.AreaCircle> def2 = def.stream()
-                .map(c -> new S2CSectorAreaPacket.AreaCircle(c.x(), c.z(), c.r()))
-                .toList();
-
-        sendToAll(level, new S2CSectorAreaPacket(sectorIndex, atk2, def2));
+                                       List<Sector.AreaCircle> atk, List<Sector.AreaCircle> def) {
+        var atk2 = atk.stream().map(c -> new S2CSectorAreaPacket.AreaCircle(c.x(), c.z(), c.r())).toList();
+        var def2 = def.stream().map(c -> new S2CSectorAreaPacket.AreaCircle(c.x(), c.z(), c.r())).toList();
+        sendToAllInLevel(level, new S2CSectorAreaPacket(sectorIndex, atk2, def2));
     }
 }

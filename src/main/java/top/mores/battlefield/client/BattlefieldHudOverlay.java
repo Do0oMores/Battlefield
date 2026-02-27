@@ -122,7 +122,7 @@ public final class BattlefieldHudOverlay {
             // 点内人数条 + 彩色 “4:1”（我方=蓝、敌方=红）
             if (i == activeIndex) {
                 int blueCount = (ClientGameState.myTeam == 0) ? p.attackersIn : p.defendersIn;
-                int redCount  = (ClientGameState.myTeam == 0) ? p.defendersIn : p.attackersIn;
+                int redCount = (ClientGameState.myTeam == 0) ? p.defendersIn : p.attackersIn;
                 drawUnderBarOnly(g, cx, cy, size, blueCount, redCount);
             }
         }

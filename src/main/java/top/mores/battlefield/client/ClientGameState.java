@@ -43,9 +43,6 @@ public final class ClientGameState {
 
             if (last == null) continue;
 
-            // 点位被攻方占满：
-            // - 攻方听到“占领点”
-            // - 守方听到“失去点位”
             final int CAP_T = 99;
             if (last < CAP_T && p.progress >= CAP_T) {
                 Minecraft.getInstance().player.sendSystemMessage(
@@ -55,7 +52,6 @@ public final class ClientGameState {
                 else if (myTeam == 1) VoiceManager.play(ModSounds.VOICE_POINT_LOST_A.get());
             }
 
-// 守方占满：- 守方听“占领点” - 攻方听“失去点位”
             if (last > -CAP_T && p.progress <= -CAP_T) {
                 Minecraft.getInstance().player.sendSystemMessage(
                         net.minecraft.network.chat.Component.literal("CAPTURE TRIGGER: B" + p.id + " prog=" + p.progress + " last=" + last)

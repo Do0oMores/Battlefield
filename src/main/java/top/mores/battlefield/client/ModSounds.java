@@ -39,5 +39,6 @@ public final class ModSounds {
         return new ResourceLocation(Battlefield.MODID, path);
     }
 
-    private ModSounds() {}
+    private ModSounds() {
+    }
 }

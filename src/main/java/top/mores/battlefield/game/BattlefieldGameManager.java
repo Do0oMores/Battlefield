@@ -1,6 +1,8 @@
 package top.mores.battlefield.game;
 
 import net.minecraft.server.level.ServerLevel;
+import top.mores.battlefield.breakthrough.CapturePoint;
+import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.team.SquadManager;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -11,7 +13,9 @@ import top.mores.battlefield.net.S2CGameStatePacket;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 
+import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -36,6 +40,12 @@ public final class BattlefieldGameManager {
         SESSION = session;
         tickCounter = 0;
         OUTSIDE_AREA_TICKS.clear();
+        if (SESSION != null) {
+            Sector cur = SESSION.currentSector();
+            if (cur != null) {
+                BattlefieldNet.sendSectorAreas(SESSION.level, SESSION.currentSectorIndex, cur.attackerAreas, cur.defenderAreas);
+            }
+        }
     }
 
     public static boolean stopSession() {
@@ -97,6 +107,7 @@ public final class BattlefieldGameManager {
             );
         }
     }
+
     private static void enforceMovableArea() {
         var s = SESSION;
         var sector = s.currentSector();
@@ -115,12 +126,10 @@ public final class BattlefieldGameManager {
                 continue;
             }
 
-            boolean inside = BattlefieldAreaRules.isInsideMovableAreaServer(
-                    myTeam,
-                    sp.getX(),
-                    sp.getZ(),
-                    sector.points
-            );
+            List<Sector.AreaCircle> myAreas =
+                    (myTeam == 0) ? sector.attackerAreas : sector.defenderAreas;
+
+            boolean inside = BattlefieldAreaRules.isInsideAreas2D(sp.getX(), sp.getZ(), myAreas);
 
             if (inside) {
                 OUTSIDE_AREA_TICKS.remove(sp.getUUID());
@@ -139,4 +148,34 @@ public final class BattlefieldGameManager {
         OUTSIDE_AREA_TICKS.keySet().removeIf(id -> s.level.getPlayerByUUID(id) == null);
     }
 
+    public static int reloadSectors(ServerLevel level) {
+        Path cfgDir = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("battlefield");
+        List<Sector> newSectors = top.mores.battlefield.config.SectorConfigLoader.load(cfgDir);
+
+        if (newSectors == null || newSectors.isEmpty()) {
+            return 0;
+        }
+        if (SESSION == null) {
+            return newSectors.size();
+        }
+        Sector oldSector = SESSION.currentSector();
+        Map<String, Integer> oldProgress = new HashMap<>();
+        if (oldSector != null) {
+            for (CapturePoint p : oldSector.points) {
+                oldProgress.put(p.id, p.getProgress());
+            }
+        }
+        SESSION.setSectors(newSectors);
+        Sector cur = SESSION.currentSector();
+        if (cur != null) {
+            for (CapturePoint p : cur.points) {
+                Integer v = oldProgress.get(p.id);
+                if (v != null) p.setProgress(v);
+            }
+            BattlefieldNet.sendSectorAreas(level, SESSION.currentSectorIndex, cur.attackerAreas, cur.defenderAreas);
+        }
+        OUTSIDE_AREA_TICKS.clear();
+
+        return newSectors.size();
+    }
 }

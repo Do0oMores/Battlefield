@@ -36,5 +36,6 @@ public final class VoiceManager {
         });
     }
 
-    private VoiceManager() {}
+    private VoiceManager() {
+    }
 }
