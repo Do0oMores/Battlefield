@@ -25,6 +25,8 @@ public final class ClientGameState {
     public static int remainingTimeTicks = 0;
     public static int myScore = 0;
     public static int myLastBonus = 0;
+    public static int hudScore = 0;
+    public static int hudLastScoreClientTick = -1;
     public static List<String> squadPlayerIds = Collections.emptyList();
     public static List<Integer> squadPlayerScores = Collections.emptyList();
     public static int squadTotalScore = 0;
@@ -41,6 +43,7 @@ public final class ClientGameState {
                               int remainTicks, int score, int bonus,
                               List<String> squadIds, List<Integer> squadScores, int squadTotal,
                               List<S2CGameStatePacket.PointInfo> pts) {
+        int prevMyScore = myScore;
         inBattle = inBattle0;
 
         if (!inBattle) {
@@ -54,6 +57,15 @@ public final class ClientGameState {
         remainingTimeTicks = remainTicks;
         myScore = score;
         myLastBonus = bonus;
+
+        if (myScore > prevMyScore) {
+            hudScore += (myScore - prevMyScore);
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player != null) {
+                hudLastScoreClientTick = mc.player.tickCount;
+            }
+        }
+
         squadPlayerIds = squadIds;
         squadPlayerScores = squadScores;
         squadTotalScore = squadTotal;
@@ -110,6 +122,8 @@ public final class ClientGameState {
         remainingTimeTicks = 0;
         myScore = 0;
         myLastBonus = 0;
+        hudScore = 0;
+        hudLastScoreClientTick = -1;
         squadPlayerIds = Collections.emptyList();
         squadPlayerScores = Collections.emptyList();
         squadTotalScore = 0;
