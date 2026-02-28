@@ -32,6 +32,7 @@ public final class ClientGameState {
     public static int squadTotalScore = 0;
     public static List<S2CGameStatePacket.PointInfo> points = Collections.emptyList();
     private static final Map<String, Integer> lastProgressById = new HashMap<>();
+    private static final Map<String, Byte> lastOwnerTeamById = new HashMap<>();
     public static final Map<String, Integer> deltaProgressById = new HashMap<>();
     public static int sectorIndex = 0;
 
@@ -100,17 +101,14 @@ public final class ClientGameState {
             int dp = (last == null) ? 0 : (p.progress - last);
             deltaProgressById.put(p.id, dp);
 
-            if (last == null) continue;
+            Byte lastOwner = lastOwnerTeamById.put(p.id, p.ownerTeam);
+            if (lastOwner == null || myTeam > 1) continue;
 
-            final int CAP_T = 99;
-            if (last < CAP_T && p.progress >= CAP_T) {
-                if (myTeam == 0) VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
-                else if (myTeam == 1) VoiceManager.play(ModSounds.VOICE_POINT_LOST.get());
-            }
-
-            if (last > -CAP_T && p.progress <= -CAP_T) {
-                if (myTeam == 1) VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
-                else if (myTeam == 0) VoiceManager.play(ModSounds.VOICE_POINT_LOST.get());
+            // 语音仅在“控制权真正切换”时触发，避免“只推进过进度但从未占下”也播失去点位。
+            if (lastOwner != myTeam && p.ownerTeam == myTeam) {
+                VoiceManager.play(ModSounds.VOICE_POINT_CAPTURED.get());
+            } else if (lastOwner == myTeam && p.ownerTeam != myTeam && p.ownerTeam <= 1) {
+                VoiceManager.play(ModSounds.VOICE_POINT_LOST.get());
             }
         }
     }
@@ -149,6 +147,7 @@ public final class ClientGameState {
         defenderAreas = Collections.emptyList();
         sectorIndex = 0;
         lastProgressById.clear();
+        lastOwnerTeamById.clear();
         deltaProgressById.clear();
     }
 

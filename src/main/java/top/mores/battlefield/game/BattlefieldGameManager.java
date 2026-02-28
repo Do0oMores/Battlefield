@@ -98,6 +98,7 @@ public final class BattlefieldGameManager {
             list.add(new S2CGameStatePacket.PointInfo(
                     p.id, p.x, p.y, p.z, (float) p.radius,
                     p.getProgress(),
+                    (byte) (p.owner == TeamId.ATTACKERS ? 0 : (p.owner == TeamId.DEFENDERS ? 1 : 2)),
                     p.lastAttackersIn,
                     p.lastDefendersIn
             ));
