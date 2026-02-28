@@ -64,8 +64,8 @@ public final class ScoreManager {
         if (damage <= 0) return;
         if (owner.equals(victim)) return;
 
-        ServerPlayer ownerPlayer = level.getPlayerByUUID(owner);
-        ServerPlayer victimPlayer = level.getPlayerByUUID(victim);
+        ServerPlayer ownerPlayer = (ServerPlayer) level.getPlayerByUUID(owner);
+        ServerPlayer victimPlayer = (ServerPlayer) level.getPlayerByUUID(victim);
         if (ownerPlayer == null || victimPlayer == null) return;
         if (TeamManager.isSameTeam(ownerPlayer, victimPlayer)) return;
 
@@ -74,8 +74,8 @@ public final class ScoreManager {
     }
 
     public static void onBombKill(ServerLevel level, UUID owner, UUID victim) {
-        ServerPlayer ownerPlayer = level.getPlayerByUUID(owner);
-        ServerPlayer victimPlayer = level.getPlayerByUUID(victim);
+        ServerPlayer ownerPlayer = (ServerPlayer) level.getPlayerByUUID(owner);
+        ServerPlayer victimPlayer = (ServerPlayer) level.getPlayerByUUID(victim);
         if (ownerPlayer == null || victimPlayer == null) return;
         if (TeamManager.isSameTeam(ownerPlayer, victimPlayer)) return;
 
