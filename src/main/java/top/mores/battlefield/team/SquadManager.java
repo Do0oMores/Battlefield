@@ -22,6 +22,21 @@ public final class SquadManager {
         return SquadSavedData.get(p.serverLevel()).mapFor(team).getOrDefault(p.getUUID(), 0);
     }
 
+    public static int getSquad(ServerLevel level, UUID playerId, TeamId team) {
+        if (team == TeamId.SPECTATOR) return 0;
+        return SquadSavedData.get(level).mapFor(team).getOrDefault(playerId, 0);
+    }
+
+    public static List<UUID> getSquadMembers(ServerLevel level, TeamId team, int squadId) {
+        if (team == TeamId.SPECTATOR || squadId <= 0) return java.util.Collections.emptyList();
+        Map<UUID, Integer> map = SquadSavedData.get(level).mapFor(team);
+        List<UUID> list = new ArrayList<>();
+        for (Map.Entry<UUID, Integer> en : map.entrySet()) {
+            if (en.getValue() == squadId) list.add(en.getKey());
+        }
+        return list;
+    }
+
     public static boolean createSquad(ServerPlayer p) {
         TeamId team = TeamManager.getTeam(p);
         if (team == TeamId.SPECTATOR) return false;

@@ -6,11 +6,16 @@ import top.mores.battlefield.breakthrough.Sector;
 import java.util.List;
 
 public class GameSession {
+    public static final int DEFAULT_MATCH_DURATION_TICKS = 20 * 60 * 20; // 20 分钟
+
     public final ServerLevel level;
     public List<Sector> sectors;
     public int currentSectorIndex = 0;
 
     public int attackerTickets = 300;
+    public int defenderTickets = 300;
+    public long startGameTick = 0;
+    public int matchDurationTicks = DEFAULT_MATCH_DURATION_TICKS;
 
     // 可选比分
     public int attackerScore = 0;
@@ -34,6 +39,12 @@ public class GameSession {
     public GameSession(ServerLevel serverLevel, List<Sector> sectors) {
         this.level = serverLevel;
         this.sectors = sectors;
+        this.startGameTick = serverLevel.getGameTime();
+    }
+
+    public int getRemainingTicks() {
+        long passed = Math.max(0L, level.getGameTime() - startGameTick);
+        return Math.max(0, matchDurationTicks - (int) passed);
     }
 
     public void setSectors(List<Sector> newSectors) {

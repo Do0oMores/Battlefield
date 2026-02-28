@@ -15,6 +15,7 @@ import top.mores.battlefield.team.TeamManager;
 
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -41,6 +42,7 @@ public final class BattlefieldGameManager {
         tickCounter = 0;
         OUTSIDE_AREA_TICKS.clear();
         if (SESSION != null) {
+            ScoreManager.reset();
             Sector cur = SESSION.currentSector();
             if (cur != null) {
                 BattlefieldNet.sendSectorAreas(SESSION.level, SESSION.currentSectorIndex, cur.attackerAreas, cur.defenderAreas);
@@ -61,6 +63,7 @@ public final class BattlefieldGameManager {
         tickCounter = 0;
         OUTSIDE_AREA_TICKS.clear();
         SquadManager.clearAll(level);
+        ScoreManager.reset();
         sendInactiveState(level);
         return true;
     }
@@ -71,6 +74,11 @@ public final class BattlefieldGameManager {
         if (SESSION == null || !SESSION.running) return;
 
         tickCounter++;
+
+        if (SESSION.getRemainingTicks() <= 0) {
+            stopSession();
+            return;
+        }
 
         enforceMovableArea();
 
@@ -101,7 +109,34 @@ public final class BattlefieldGameManager {
             TeamId t = TeamManager.getTeam(sp);
             byte myTeam = (byte) (t == TeamId.ATTACKERS ? 0 : (t == TeamId.DEFENDERS ? 1 : 2));
 
-            var pkt = new S2CGameStatePacket(myTeam == 0 || myTeam == 1, myTeam, s.attackerTickets, -1, list);
+            int myScore = ScoreManager.getScore(sp.getUUID());
+            int myBonus = ScoreManager.getLastBonus(sp.getUUID(), s.level.getGameTime());
+
+            List<String> squadIds = new java.util.ArrayList<>();
+            List<Integer> squadScores = new java.util.ArrayList<>();
+            int squadTotal = 0;
+
+            if (t != TeamId.SPECTATOR) {
+                int squadId = SquadManager.getSquad(sp);
+                var members = SquadManager.getSquadMembers(s.level, t, squadId);
+                members.sort(Comparator.comparing(u -> {
+                    var p = s.level.getPlayerByUUID(u);
+                    return p != null ? p.getGameProfile().getName() : u.toString();
+                }));
+                for (UUID id : members) {
+                    var member = s.level.getPlayerByUUID(id);
+                    String display = member != null ? member.getGameProfile().getName() : id.toString().substring(0, 8);
+                    int sc = ScoreManager.getScore(id);
+                    squadIds.add(display);
+                    squadScores.add(sc);
+                    squadTotal += sc;
+                }
+            }
+
+            var pkt = new S2CGameStatePacket(myTeam == 0 || myTeam == 1, myTeam,
+                    s.attackerTickets, s.defenderTickets,
+                    s.getRemainingTicks(), myScore, myBonus,
+                    squadIds, squadScores, squadTotal, list);
             BattlefieldNet.CH.send(
                     net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
                     pkt
@@ -181,7 +216,10 @@ public final class BattlefieldGameManager {
     }
 
     private static void sendInactiveState(ServerLevel level) {
-        var resetPacket = new S2CGameStatePacket(false, (byte) 2, 0, -1, java.util.Collections.emptyList());
+        var resetPacket = new S2CGameStatePacket(false, (byte) 2, 0, 0,
+                0, 0, 0,
+                java.util.Collections.emptyList(), java.util.Collections.emptyList(), 0,
+                java.util.Collections.emptyList());
         BattlefieldNet.sendToAllInLevel(level, resetPacket);
         BattlefieldNet.sendToAllInLevel(level, new top.mores.battlefield.net.S2CSectorAreaPacket(0,
                 java.util.Collections.emptyList(), java.util.Collections.emptyList()));

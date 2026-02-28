@@ -69,6 +69,8 @@ public class SectorManager {
             double dx = pos.x - cx, dz = pos.z - cz;
             if (dx * dx + dz * dz > r2) continue;
 
+            ScoreManager.addCaptureScore(sp, 5);
+
             if (team == TeamId.ATTACKERS) attackers++;
             else if (team == TeamId.DEFENDERS) defenders++;
         }
