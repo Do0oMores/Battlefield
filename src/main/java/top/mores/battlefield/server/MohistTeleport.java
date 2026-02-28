@@ -23,6 +23,9 @@ public final class MohistTeleport {
                                        float yaw, float pitch) {
         sp.server.execute(() -> {
             World w = Bukkit.getWorld(worldName);
+            if (w == null && worldName != null && worldName.contains(":")) {
+                w = Bukkit.getWorld(worldName.substring(worldName.indexOf(':') + 1));
+            }
             if (w == null) {
                 sp.sendSystemMessage(net.minecraft.network.chat.Component.literal("世界不存在: " + worldName));
                 return;
