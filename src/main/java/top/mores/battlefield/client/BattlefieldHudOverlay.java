@@ -23,6 +23,7 @@ public final class BattlefieldHudOverlay {
     private static final int RED = 0xFFFF3B30;
     private static final int WHITE = 0xFFFFFFFF;
     private static final int WARNING_TEXT = 0xFFFF5555;
+    private static final int HUD_SCORE_HIDE_TICKS = 15 * 20;
 
     // 方向判定的“死区”，避免抖动导致方向频繁翻转
     private static final float DIR_DEADZONE = 0.0035f;
@@ -137,7 +138,18 @@ public final class BattlefieldHudOverlay {
     }
 
     private static void renderCenterScore(GuiGraphics g, Minecraft mc, int screenWidth, int screenHeight) {
-        String total = String.valueOf(ClientGameState.myScore);
+        if (mc.player == null) return;
+
+        int nowTick = mc.player.tickCount;
+        if (ClientGameState.hudLastScoreClientTick >= 0
+                && nowTick - ClientGameState.hudLastScoreClientTick >= HUD_SCORE_HIDE_TICKS) {
+            ClientGameState.hudScore = 0;
+            ClientGameState.hudLastScoreClientTick = -1;
+        }
+
+        if (ClientGameState.hudLastScoreClientTick < 0) return;
+
+        String total = String.valueOf(ClientGameState.hudScore);
         int y = screenHeight / 2 + 36;
         int totalW = mc.font.width(total);
         g.drawString(mc.font, total, screenWidth / 2 - totalW / 2, y, WHITE, true);
