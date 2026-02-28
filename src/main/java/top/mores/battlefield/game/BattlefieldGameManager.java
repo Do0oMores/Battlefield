@@ -381,11 +381,18 @@ public final class BattlefieldGameManager {
 
     private static void teleportTo(ServerPlayer player, SectorConfigLoader.Position pos) {
         if (pos == null) return;
-        ServerLevel level = pos.resolveLevel(player.getServer(), player.serverLevel());
-        if (level != player.serverLevel()) {
-            MohistTeleport.teleportToWorld(player, pos.world(), pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
-            return;
+
+        String targetWorld = pos.world();
+        if (targetWorld != null && !targetWorld.isBlank()) {
+            String curWorld = MohistTeleport.getCurrentWorldName(player);
+            String normTarget = MohistTeleport.normalizeWorldName(targetWorld);
+
+            if (curWorld != null && !curWorld.equalsIgnoreCase(normTarget)) {
+                MohistTeleport.teleportToWorld(player, normTarget, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
+                return;
+            }
         }
+        ServerLevel level = pos.resolveLevel(player.getServer(), player.serverLevel());
         player.teleportTo(level, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
     }
 
