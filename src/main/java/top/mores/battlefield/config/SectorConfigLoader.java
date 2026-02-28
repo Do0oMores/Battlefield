@@ -44,32 +44,21 @@ public final class SectorConfigLoader {
         List<SectorJson> sectors;
     }
 
-    public static final class Position {
-        public final String world;
-        public final double x;
-        public final double y;
-        public final double z;
-
-        public Position(String world, double x, double y, double z) {
-            this.world = world;
-            this.x = x;
-            this.y = y;
-            this.z = z;
-        }
+    public record Position(String world, double x, double y, double z) {
 
         public ServerLevel resolveLevel(MinecraftServer server, ServerLevel fallback) {
-            ResourceLocation id = ResourceLocation.tryParse(world);
-            if (id == null) {
-                return fallback;
+                ResourceLocation id = ResourceLocation.tryParse(world);
+                if (id == null) {
+                    return fallback;
+                }
+                ServerLevel level = server.getLevel(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, id));
+                return level != null ? level : fallback;
             }
-            ServerLevel level = server.getLevel(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, id));
-            return level != null ? level : fallback;
-        }
 
-        public Vec3 toVec3() {
-            return new Vec3(x, y, z);
+            public Vec3 toVec3() {
+                return new Vec3(x, y, z);
+            }
         }
-    }
 
     public static final class SectorConfig {
         public final String world;

@@ -7,7 +7,6 @@ import net.minecraft.world.phys.Vec3;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.net.BattlefieldNet;
-import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 

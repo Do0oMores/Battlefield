@@ -17,7 +17,8 @@ import java.util.*;
 
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class ScoreManager {
-    private ScoreManager() {}
+    private ScoreManager() {
+    }
 
     private static final int STREAK_WINDOW_TICKS = 15 * 20;
     private static final int STREAK_KILL_BONUS = 50;
@@ -31,7 +32,9 @@ public final class ScoreManager {
     // ===== 连杀/团灭判定 =====
     private static final Map<UUID, Long> LAST_KILL_TICK = new HashMap<>();
     private static final Map<UUID, Map<String, KillWindow>> STREAK_SQUAD_KILLS = new HashMap<>();
-    private record KillWindow(Set<UUID> killedVictims) {}
+
+    private record KillWindow(Set<UUID> killedVictims) {
+    }
 
     // ===== Toast 并行合并 =====
     private static final int TOAST_MERGE_WINDOW_TICKS = 6;   // 同 reason 6 tick 内合并
@@ -42,6 +45,7 @@ public final class ScoreManager {
     private static final class PendingToast {
         int amount;
         long lastTick;
+
         PendingToast(int amount, long lastTick) {
             this.amount = amount;
             this.lastTick = lastTick;
@@ -66,11 +70,14 @@ public final class ScoreManager {
         STREAK_SQUAD_KILLS.remove(playerId);
         PENDING_TOASTS.remove(playerId);
     }
+
     public static int getScore(UUID playerId) {
         return SCORES.getOrDefault(playerId, 0);
     }
 
-    /** 旧HUD用：最近 40 tick 内最后一次加分 */
+    /**
+     * 旧HUD用：最近 40 tick 内最后一次加分
+     */
     public static int getLastBonus(UUID playerId, long nowTick) {
         long t = LAST_BONUS_TICK.getOrDefault(playerId, -9999L);
         if (nowTick - t > 40) return 0;
@@ -156,7 +163,9 @@ public final class ScoreManager {
         }
     }
 
-    /** 核心：加分 + 并行合并 toast（不立刻发，交给 tick flush） */
+    /**
+     * 核心：加分 + 并行合并 toast（不立刻发，交给 tick flush）
+     */
     private static void addScore(ServerPlayer player, int score, ScoreReason reason) {
         if (score <= 0) return;
 
@@ -188,7 +197,9 @@ public final class ScoreManager {
         }
     }
 
-    /** 定时 flush：超过阈值未更新就发给客户端 */
+    /**
+     * 定时 flush：超过阈值未更新就发给客户端
+     */
     @SubscribeEvent
     public static void onServerTick(net.minecraftforge.event.TickEvent.ServerTickEvent e) {
         if (e.phase != net.minecraftforge.event.TickEvent.Phase.END) return;

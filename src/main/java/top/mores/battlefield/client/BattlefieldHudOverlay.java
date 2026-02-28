@@ -55,7 +55,7 @@ public final class BattlefieldHudOverlay {
         int topY = 6;
         int centerX = screenWidth / 2;
 
-        // ✅ 票数显示：永远显示进攻方兵力（防守方无限兵力不显示）
+        // 票数显示：永远显示进攻方兵力（防守方无限兵力不显示）
         String timer = formatRemainingTime(ClientGameState.remainingTimeTicks);
         String tickets = String.valueOf(ClientGameState.attackerTickets);
         String topLine = timer + "   " + tickets;
@@ -89,11 +89,11 @@ public final class BattlefieldHudOverlay {
             float attackersPct = (p.progress + 100) / 200f;
             attackersPct = Mth.clamp(attackersPct, 0f, 1f);
 
-            // ✅ 蓝永远代表我方：我是攻方 -> 蓝=攻方占比；我是守方 -> 蓝=守方占比
+            // 蓝永远代表我方：我是攻方 -> 蓝=攻方占比；我是守方 -> 蓝=守方占比
             float blueFrac = (ClientGameState.myTeam == 0) ? attackersPct : (1f - attackersPct);
             blueFrac = Mth.clamp(blueFrac, 0f, 1f);
 
-            // ✅ 用 blueFrac 的变化决定顺/逆时针
+            // 用 blueFrac 的变化决定顺/逆时针
             float last = LAST_BLUE_FRAC.getOrDefault(key, blueFrac);
             float dBlue = blueFrac - last;
             LAST_BLUE_FRAC.put(key, blueFrac);
@@ -124,7 +124,6 @@ public final class BattlefieldHudOverlay {
             int lw = mc.font.width(label);
             g.drawString(mc.font, label, cx - lw / 2, cy - 4, WHITE, true);
 
-            // 点内人数条 + 彩色 “4:1”（我方=蓝、敌方=红）
             if (i == activeIndex) {
                 int blueCount = (ClientGameState.myTeam == 0) ? p.attackersIn : p.defendersIn;
                 int redCount = (ClientGameState.myTeam == 0) ? p.defendersIn : p.attackersIn;
@@ -188,7 +187,7 @@ public final class BattlefieldHudOverlay {
             int color = (a << 24) | (t.color & 0x00FFFFFF);
 
             String line = "+" + t.amount + " " + t.text;
-            if (t.count > 1) line += " x" + t.count; // 合并显示（可选）
+            if (t.count > 1) line += " x" + t.count;
 
             int y = startY + idx * lineGap;
 

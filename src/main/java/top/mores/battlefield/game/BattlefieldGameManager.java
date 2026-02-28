@@ -348,8 +348,8 @@ public final class BattlefieldGameManager {
     }
 
     private static TeamId autoAssignWithLimit(ServerPlayer player) {
-        long atk = PARTICIPANTS.stream().map(player.serverLevel()::getPlayerByUUID).filter(Objects::nonNull).filter(sp -> TeamManager.getTeam(sp) == TeamId.ATTACKERS).count();
-        long def = PARTICIPANTS.stream().map(player.serverLevel()::getPlayerByUUID).filter(Objects::nonNull).filter(sp -> TeamManager.getTeam(sp) == TeamId.DEFENDERS).count();
+        long atk = PARTICIPANTS.stream().map(player.serverLevel()::getPlayerByUUID).filter(Objects::nonNull).filter(sp -> TeamManager.getTeam((ServerPlayer) sp) == TeamId.ATTACKERS).count();
+        long def = PARTICIPANTS.stream().map(player.serverLevel()::getPlayerByUUID).filter(Objects::nonNull).filter(sp -> TeamManager.getTeam((ServerPlayer) sp) == TeamId.DEFENDERS).count();
 
         TeamId pick;
         if (atk >= config.attackNumber && def >= config.defendNumber) {
@@ -381,7 +381,7 @@ public final class BattlefieldGameManager {
     private static void teleportTo(ServerPlayer player, SectorConfigLoader.Position pos) {
         if (pos == null) return;
         ServerLevel level = pos.resolveLevel(player.getServer(), player.serverLevel());
-        player.teleportTo(level, pos.x, pos.y, pos.z, player.getYRot(), player.getXRot());
+        player.teleportTo(level, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
     }
 
     private static void setRespawn(ServerPlayer player, SectorConfigLoader.Position pos) {
@@ -395,7 +395,7 @@ public final class BattlefieldGameManager {
         List<ServerPlayer> players = PARTICIPANTS.stream()
                 .map(id -> battleLevel.getServer().getPlayerList().getPlayer(id))
                 .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+                .toList();
         players.forEach(action);
     }
 

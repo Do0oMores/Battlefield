@@ -166,10 +166,11 @@ public final class ClientGameState {
 
     /**
      * 推送一条得分提示（推荐唯一入口）
-     * @param amount  分值（正数）
-     * @param text    描述，如 "占领"
-     * @param color   颜色ARGB
-     * @param nowTick 当前tick（mc.player.tickCount）
+     *
+     * @param amount   分值（正数）
+     * @param text     描述，如 "占领"
+     * @param color    颜色ARGB
+     * @param nowTick  当前tick（mc.player.tickCount）
      * @param mergeKey 合并key（同一个key在短时间内会合并到上一条），比如 "CAPTURE"
      */
     public static void pushScoreToast(int amount, String text, int color, int nowTick, String mergeKey) {

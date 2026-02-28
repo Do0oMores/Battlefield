@@ -16,18 +16,30 @@ public class S2CBombardSmokePacket {
     public S2CBombardSmokePacket(double x, double y, double z,
                                  float r, float g, float b,
                                  int count, float dx, float dy, float dz, float speed) {
-        this.x = x; this.y = y; this.z = z;
-        this.r = r; this.g = g; this.b = b;
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.r = r;
+        this.g = g;
+        this.b = b;
         this.count = count;
-        this.dx = dx; this.dy = dy; this.dz = dz;
+        this.dx = dx;
+        this.dy = dy;
+        this.dz = dz;
         this.speed = speed;
     }
 
     public static void encode(S2CBombardSmokePacket msg, FriendlyByteBuf buf) {
-        buf.writeDouble(msg.x); buf.writeDouble(msg.y); buf.writeDouble(msg.z);
-        buf.writeFloat(msg.r); buf.writeFloat(msg.g); buf.writeFloat(msg.b);
+        buf.writeDouble(msg.x);
+        buf.writeDouble(msg.y);
+        buf.writeDouble(msg.z);
+        buf.writeFloat(msg.r);
+        buf.writeFloat(msg.g);
+        buf.writeFloat(msg.b);
         buf.writeVarInt(msg.count);
-        buf.writeFloat(msg.dx); buf.writeFloat(msg.dy); buf.writeFloat(msg.dz);
+        buf.writeFloat(msg.dx);
+        buf.writeFloat(msg.dy);
+        buf.writeFloat(msg.dz);
         buf.writeFloat(msg.speed);
     }
 
