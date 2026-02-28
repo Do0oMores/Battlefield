@@ -49,6 +49,14 @@ public final class BattlefieldNet {
                 S2CBombardSmokePacket::decode,
                 S2CBombardSmokePacket::handle
         );
+
+        CH.registerMessage(
+                id++,
+                S2CScoreToastPacket.class,
+                S2CScoreToastPacket::encode,
+                S2CScoreToastPacket::decode,
+                S2CScoreToastPacket::handle
+        );
     }
 
     public static void sendToPlayer(ServerPlayer sp, Object pkt) {

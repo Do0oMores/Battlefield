@@ -141,23 +141,69 @@ public final class BattlefieldHudOverlay {
         if (mc.player == null) return;
 
         int nowTick = mc.player.tickCount;
+
+        // 中心HUD超时隐藏（你原逻辑）
         if (ClientGameState.hudLastScoreClientTick >= 0
                 && nowTick - ClientGameState.hudLastScoreClientTick >= HUD_SCORE_HIDE_TICKS) {
             ClientGameState.hudScore = 0;
             ClientGameState.hudLastScoreClientTick = -1;
         }
-
         if (ClientGameState.hudLastScoreClientTick < 0) return;
 
-        String total = String.valueOf(ClientGameState.hudScore);
-        int y = screenHeight / 2 + 36;
-        int totalW = mc.font.width(total);
-        g.drawString(mc.font, total, screenWidth / 2 - totalW / 2, y, WHITE, true);
+        // 过期 toast 清理
+        ClientGameState.pruneScoreToasts(nowTick);
 
-        if (ClientGameState.myLastBonus > 0) {
-            String bonus = "+" + ClientGameState.myLastBonus;
-            int bonusW = mc.font.width(bonus);
-            g.drawString(mc.font, bonus, screenWidth / 2 - bonusW / 2, y + 12, 0xFF88FF88, true);
+        int baseY = screenHeight / 2 + 36;
+
+        // ===== 总分：更大 =====
+        String total = String.valueOf(ClientGameState.hudScore);
+        float totalScale = 1.6f;
+        int totalW = mc.font.width(total);
+        float scaledTotalW = totalW * totalScale;
+
+        g.pose().pushPose();
+        g.pose().scale(totalScale, totalScale, 1f);
+        float totalX = (screenWidth / 2f - scaledTotalW / 2f) / totalScale;
+        float totalY = baseY / totalScale;
+        g.drawString(mc.font, total, (int) totalX, (int) totalY, WHITE, true);
+        g.pose().popPose();
+
+        // ===== 多行 toast：从下往上或从上往下随你 =====
+        float toastScale = 1.0f;
+        int lineGap = 11;      // 行间距（未缩放前）
+        int startY = baseY + 16;
+
+        int idx = 0;
+        for (ClientGameState.ScoreToast t : ClientGameState.SCORE_TOASTS) {
+            // 计算淡出（最后 15 tick 线性淡出）
+            int age = nowTick - t.startTick;
+            int remain = ClientGameState.HUD_TOAST_HIDE_TICKS - age;
+            float alpha = 1.0f;
+            int fadeTicks = 15;
+            if (remain < fadeTicks) alpha = Math.max(0f, remain / (float) fadeTicks);
+
+            // ARGB 叠 alpha
+            int a = (int) (((t.color >>> 24) & 0xFF) * alpha);
+            int color = (a << 24) | (t.color & 0x00FFFFFF);
+
+            String line = "+" + t.amount + " " + t.text;
+            if (t.count > 1) line += " x" + t.count; // 合并显示（可选）
+
+            int y = startY + idx * lineGap;
+
+            int w = mc.font.width(line);
+            float scaledW = w * toastScale;
+
+            g.pose().pushPose();
+            g.pose().scale(toastScale, toastScale, 1f);
+            float x = (screenWidth / 2f - scaledW / 2f) / toastScale;
+            float yf = y / toastScale;
+
+            g.drawString(mc.font, line, (int) x, (int) yf, color, true);
+            g.pose().popPose();
+
+            idx++;
+            if (idx >= ClientGameState.HUD_TOAST_MAX_LINES) break;
         }
     }
 

@@ -1,5 +1,5 @@
 {
-  "world": "minecraft:overworld",
+  "world": "minecraft:world",
   "time": 20,
   "military": 300,
   "sectors": [

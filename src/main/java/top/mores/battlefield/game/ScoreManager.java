@@ -7,6 +7,8 @@ import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import top.mores.battlefield.Battlefield;
+import top.mores.battlefield.net.BattlefieldNet;
+import top.mores.battlefield.net.S2CScoreToastPacket;
 import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
@@ -15,20 +17,35 @@ import java.util.*;
 
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class ScoreManager {
-    private ScoreManager() {
-    }
+    private ScoreManager() {}
 
     private static final int STREAK_WINDOW_TICKS = 15 * 20;
     private static final int STREAK_KILL_BONUS = 50;
     private static final int SQUAD_WIPE_BONUS = 200;
 
+    // ===== 分数与旧HUD兼容字段 =====
     private static final Map<UUID, Integer> SCORES = new HashMap<>();
     private static final Map<UUID, Integer> LAST_BONUS = new HashMap<>();
     private static final Map<UUID, Long> LAST_BONUS_TICK = new HashMap<>();
+
+    // ===== 连杀/团灭判定 =====
     private static final Map<UUID, Long> LAST_KILL_TICK = new HashMap<>();
     private static final Map<UUID, Map<String, KillWindow>> STREAK_SQUAD_KILLS = new HashMap<>();
+    private record KillWindow(Set<UUID> killedVictims) {}
 
-    private record KillWindow(Set<UUID> killedVictims) {
+    // ===== Toast 并行合并 =====
+    private static final int TOAST_MERGE_WINDOW_TICKS = 6;   // 同 reason 6 tick 内合并
+    private static final int TOAST_FLUSH_AFTER_TICKS = 12;   // 超过 12 tick 未更新就 flush（持续射击也会定期吐）
+
+    private static final Map<UUID, EnumMap<ScoreReason, PendingToast>> PENDING_TOASTS = new HashMap<>();
+
+    private static final class PendingToast {
+        int amount;
+        long lastTick;
+        PendingToast(int amount, long lastTick) {
+            this.amount = amount;
+            this.lastTick = lastTick;
+        }
     }
 
     public static void reset() {
@@ -37,12 +54,14 @@ public final class ScoreManager {
         LAST_BONUS_TICK.clear();
         LAST_KILL_TICK.clear();
         STREAK_SQUAD_KILLS.clear();
+        PENDING_TOASTS.clear();
     }
 
     public static int getScore(UUID playerId) {
         return SCORES.getOrDefault(playerId, 0);
     }
 
+    /** 旧HUD用：最近 40 tick 内最后一次加分 */
     public static int getLastBonus(UUID playerId, long nowTick) {
         long t = LAST_BONUS_TICK.getOrDefault(playerId, -9999L);
         if (nowTick - t > 40) return 0;
@@ -50,32 +69,25 @@ public final class ScoreManager {
     }
 
     public static void addCaptureScore(ServerPlayer player, int score) {
-        addScore(player.getUUID(), score, player.serverLevel().getGameTime());
-    }
-
-    private static void addScore(UUID playerId, int score, long nowTick) {
-        if (score <= 0) return;
-        SCORES.put(playerId, SCORES.getOrDefault(playerId, 0) + score);
-        LAST_BONUS.put(playerId, score);
-        LAST_BONUS_TICK.put(playerId, nowTick);
+        addScore(player, score, ScoreReason.CAPTURE);
     }
 
     public static void onBombDamage(ServerLevel level, UUID owner, UUID victim, float damage) {
         if (damage <= 0) return;
         if (owner.equals(victim)) return;
 
-        ServerPlayer ownerPlayer = (ServerPlayer) level.getPlayerByUUID(owner);
-        ServerPlayer victimPlayer = (ServerPlayer) level.getPlayerByUUID(victim);
+        ServerPlayer ownerPlayer = level.getServer().getPlayerList().getPlayer(owner);
+        ServerPlayer victimPlayer = level.getServer().getPlayerList().getPlayer(victim);
         if (ownerPlayer == null || victimPlayer == null) return;
         if (TeamManager.isSameTeam(ownerPlayer, victimPlayer)) return;
 
         int rounded = Math.max(0, Math.round(damage));
-        addScore(owner, rounded, level.getGameTime());
+        addScore(ownerPlayer, rounded, ScoreReason.DAMAGE);
     }
 
     public static void onBombKill(ServerLevel level, UUID owner, UUID victim) {
-        ServerPlayer ownerPlayer = (ServerPlayer) level.getPlayerByUUID(owner);
-        ServerPlayer victimPlayer = (ServerPlayer) level.getPlayerByUUID(victim);
+        ServerPlayer ownerPlayer = level.getServer().getPlayerList().getPlayer(owner);
+        ServerPlayer victimPlayer = level.getServer().getPlayerList().getPlayer(victim);
         if (ownerPlayer == null || victimPlayer == null) return;
         if (TeamManager.isSameTeam(ownerPlayer, victimPlayer)) return;
 
@@ -89,7 +101,7 @@ public final class ScoreManager {
         if (TeamManager.isSameTeam(attacker, victim)) return;
 
         int rounded = Math.max(0, Math.round(event.getAmount()));
-        addScore(attacker.getUUID(), rounded, attacker.serverLevel().getGameTime());
+        addScore(attacker, rounded, ScoreReason.DAMAGE);
     }
 
     @SubscribeEvent
@@ -105,9 +117,12 @@ public final class ScoreManager {
         long now = attacker.serverLevel().getGameTime();
         UUID attackerId = attacker.getUUID();
 
+        // 击杀基础分（你可以按需调整）
+        addScore(attacker, 100, ScoreReason.KILL);
+
         long lastKill = LAST_KILL_TICK.getOrDefault(attackerId, Long.MIN_VALUE / 4);
         if (now - lastKill <= STREAK_WINDOW_TICKS) {
-            addScore(attackerId, STREAK_KILL_BONUS, now);
+            addScore(attacker, STREAK_KILL_BONUS, ScoreReason.STREAK);
         } else {
             STREAK_SQUAD_KILLS.remove(attackerId);
         }
@@ -123,8 +138,85 @@ public final class ScoreManager {
         win.killedVictims().add(victim.getUUID());
 
         if (win.killedVictims().size() >= SquadManager.SQUAD_CAP) {
-            addScore(attackerId, SQUAD_WIPE_BONUS, now);
+            addScore(attacker, SQUAD_WIPE_BONUS, ScoreReason.SQUAD_WIPE);
             map.remove(key);
         }
+    }
+
+    /** 核心：加分 + 并行合并 toast（不立刻发，交给 tick flush） */
+    private static void addScore(ServerPlayer player, int score, ScoreReason reason) {
+        if (score <= 0) return;
+
+        ServerLevel level = player.serverLevel();
+        long nowTick = level.getGameTime();
+        UUID playerId = player.getUUID();
+
+        // 1) 总分累计
+        SCORES.put(playerId, SCORES.getOrDefault(playerId, 0) + score);
+
+        // 2) 旧HUD兼容：记录“最后一次加分”
+        LAST_BONUS.put(playerId, score);
+        LAST_BONUS_TICK.put(playerId, nowTick);
+
+        // 3) 并行 pending：UUID -> EnumMap<reason, PendingToast>
+        EnumMap<ScoreReason, PendingToast> map =
+                PENDING_TOASTS.computeIfAbsent(playerId, k -> new EnumMap<>(ScoreReason.class));
+
+        PendingToast p = map.get(reason);
+        if (p != null && (nowTick - p.lastTick) <= TOAST_MERGE_WINDOW_TICKS) {
+            p.amount += score;
+            p.lastTick = nowTick;
+        } else {
+            // 如果同 reason 存在但超窗：先把旧的发掉，再开新的
+            if (p != null) {
+                sendToast(level, player, p.amount, reason);
+            }
+            map.put(reason, new PendingToast(score, nowTick));
+        }
+    }
+
+    /** 定时 flush：超过阈值未更新就发给客户端 */
+    @SubscribeEvent
+    public static void onServerTick(net.minecraftforge.event.TickEvent.ServerTickEvent e) {
+        if (e.phase != net.minecraftforge.event.TickEvent.Phase.END) return;
+
+        var server = net.minecraftforge.server.ServerLifecycleHooks.getCurrentServer();
+        if (server == null) return;
+        long nowTick = server.getTickCount();
+
+        Iterator<Map.Entry<UUID, EnumMap<ScoreReason, PendingToast>>> it = PENDING_TOASTS.entrySet().iterator();
+        while (it.hasNext()) {
+            var entry = it.next();
+            UUID playerId = entry.getKey();
+            EnumMap<ScoreReason, PendingToast> map = entry.getValue();
+
+            ServerPlayer sp = server.getPlayerList().getPlayer(playerId);
+            if (sp == null) {
+                it.remove();
+                continue;
+            }
+
+            ServerLevel level = sp.serverLevel();
+            Iterator<Map.Entry<ScoreReason, PendingToast>> it2 = map.entrySet().iterator();
+            while (it2.hasNext()) {
+                var e2 = it2.next();
+                ScoreReason reason = e2.getKey();
+                PendingToast p = e2.getValue();
+
+                // 注意：pending 里 lastTick 用的是 level.getGameTime()；这里用 serverTickCount
+                // 两者都每tick+1（同一 server），差一个常数不影响 dt 判断
+                if ((nowTick - p.lastTick) >= TOAST_FLUSH_AFTER_TICKS) {
+                    sendToast(level, sp, p.amount, reason);
+                    it2.remove();
+                }
+            }
+
+            if (map.isEmpty()) it.remove();
+        }
+    }
+
+    private static void sendToast(ServerLevel level, ServerPlayer sp, int amount, ScoreReason reason) {
+        if (amount <= 0) return;
+        BattlefieldNet.sendToPlayer(sp, new S2CScoreToastPacket(amount, reason.name()));
     }
 }

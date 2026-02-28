@@ -159,7 +159,7 @@ public final class SectorConfigLoader {
 
     private static void writeDefault(Path file) throws IOException {
         Root root = new Root();
-        root.world = "minecraft:overworld";
+        root.world = "minecraft:world";
         root.time = 20;
         root.military = 300;
         root.sectors = new ArrayList<>();
