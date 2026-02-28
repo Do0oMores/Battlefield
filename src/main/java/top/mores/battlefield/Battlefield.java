@@ -41,7 +41,7 @@ public class Battlefield {
 
         // Forge 事件
         MinecraftForge.EVENT_BUS.register(this);
-
+        ModEntities.register(modEventBus);
         // 你的游戏管理器事件订阅
         MinecraftForge.EVENT_BUS.register(BattlefieldGameManager.class);
     }
