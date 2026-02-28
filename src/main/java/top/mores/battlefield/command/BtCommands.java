@@ -5,7 +5,10 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
@@ -33,14 +36,25 @@ public final class BtCommands {
                 .then(Commands.literal("start")
                         .executes(ctx -> {
                             ServerPlayer p = ctx.getSource().getPlayerOrException();
-                            ServerLevel level = p.serverLevel();
+                            ServerLevel defaultLevel = p.serverLevel();
 
                             if (BattlefieldGameManager.SESSION != null && BattlefieldGameManager.SESSION.running) {
                                 ctx.getSource().sendFailure(Component.literal("已有正在运行的测试局。先 /bt stop（暂未实现）或重启服务器。"));
                                 return 0;
                             }
 
-                            List<Sector> sectors = SectorConfigLoader.load(FMLPaths.CONFIGDIR.get().resolve("battlefield"));
+                            SectorConfigLoader.SectorConfig config = SectorConfigLoader.loadConfig(FMLPaths.CONFIGDIR.get().resolve("battlefield"));
+                            List<Sector> sectors = config.sectors;
+
+                            ServerLevel level = defaultLevel;
+                            ResourceLocation worldId = ResourceLocation.tryParse(config.world);
+                            if (worldId != null) {
+                                ServerLevel configLevel = defaultLevel.getServer().getLevel(ResourceKey.create(Registries.DIMENSION, worldId));
+                                if (configLevel != null) {
+                                    level = configLevel;
+                                }
+                            }
+
                             if (sectors.isEmpty()) {
                                 Vec3 base = p.position();
                                 CapturePoint A = new CapturePoint("A", base.x + 8, base.y, base.z, 8);
@@ -55,7 +69,7 @@ public final class BtCommands {
                                 ctx.getSource().sendFailure(Component.literal("配置文件无可用扇区，已回退到临时A/B测试点。"));
                             }
 
-                            GameSession session = new GameSession(level, sectors);
+                            GameSession session = new GameSession(level, sectors, config.military, config.timeMinutes);
                             BattlefieldGameManager.setSession(session);
                             SquadManager.resetForMatchStart(level);
 
@@ -70,7 +84,7 @@ public final class BtCommands {
                             }
 
                             level.getServer().getPlayerList().broadcastSystemMessage(
-                                    Component.literal("[BT] 测试局已开始：已加载扇区=" + sectors.size() + "。"),
+                                    Component.literal("[BT] 测试局已开始：世界=" + level.dimension().location() + "，已加载扇区=" + sectors.size() + "，时长=" + config.timeMinutes + "分钟，兵力=" + config.military + "。"),
                                     false
                             );
 

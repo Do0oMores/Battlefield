@@ -54,9 +54,9 @@ public final class BattlefieldHudOverlay {
         int topY = 6;
         int centerX = screenWidth / 2;
 
-        // ✅ 票数显示：永远显示我方票数（蓝）
+        // ✅ 票数显示：永远显示进攻方兵力（防守方无限兵力不显示）
         String timer = formatRemainingTime(ClientGameState.remainingTimeTicks);
-        String tickets = String.format("%d : %d", ClientGameState.attackerTickets, ClientGameState.defenderTickets);
+        String tickets = String.valueOf(ClientGameState.attackerTickets);
         String topLine = timer + "   " + tickets;
         int tw = mc.font.width(topLine);
         g.drawString(mc.font, topLine, centerX - tw / 2, topY, WHITE, true);

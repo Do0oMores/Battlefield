@@ -186,7 +186,8 @@ public final class BattlefieldGameManager {
 
     public static int reloadSectors(ServerLevel level) {
         Path cfgDir = net.minecraftforge.fml.loading.FMLPaths.CONFIGDIR.get().resolve("battlefield");
-        List<Sector> newSectors = top.mores.battlefield.config.SectorConfigLoader.load(cfgDir);
+        top.mores.battlefield.config.SectorConfigLoader.SectorConfig cfg = top.mores.battlefield.config.SectorConfigLoader.loadConfig(cfgDir);
+        List<Sector> newSectors = cfg.sectors;
 
         if (newSectors == null || newSectors.isEmpty()) {
             return 0;
@@ -202,6 +203,8 @@ public final class BattlefieldGameManager {
             }
         }
         SESSION.setSectors(newSectors);
+        SESSION.attackerTickets = Math.max(1, cfg.military);
+        SESSION.matchDurationTicks = Math.max(1, cfg.timeMinutes) * 60 * 20;
         Sector cur = SESSION.currentSector();
         if (cur != null) {
             for (CapturePoint p : cur.points) {

@@ -25,7 +25,24 @@ public final class SectorConfigLoader {
     // ===== JSON DTO（只用于反序列化） =====
 
     private static class Root {
+        String world;
+        Integer time;
+        Integer military;
         List<SectorJson> sectors;
+    }
+
+    public static final class SectorConfig {
+        public final String world;
+        public final int timeMinutes;
+        public final int military;
+        public final List<Sector> sectors;
+
+        public SectorConfig(String world, int timeMinutes, int military, List<Sector> sectors) {
+            this.world = world;
+            this.timeMinutes = timeMinutes;
+            this.military = military;
+            this.sectors = sectors;
+        }
     }
 
     private static class SectorJson {
@@ -48,6 +65,10 @@ public final class SectorConfigLoader {
     // ===== 对外入口 =====
 
     public static List<Sector> load(Path configDir) {
+        return loadConfig(configDir).sectors;
+    }
+
+    public static SectorConfig loadConfig(Path configDir) {
         try {
             Files.createDirectories(configDir);
 
@@ -69,9 +90,27 @@ public final class SectorConfigLoader {
 
     // ===== 解析为 Sector =====
 
-    private static List<Sector> parse(Root root) {
+    private static SectorConfig parse(Root root) {
         List<Sector> sectors = new ArrayList<>();
-        if (root == null || root.sectors == null) return sectors;
+        String world = "minecraft:overworld";
+        int timeMinutes = 20;
+        int military = 300;
+
+        if (root == null) {
+            return new SectorConfig(world, timeMinutes, military, sectors);
+        }
+
+        if (root.world != null && !root.world.isBlank()) {
+            world = root.world;
+        }
+        if (root.time != null && root.time > 0) {
+            timeMinutes = root.time;
+        }
+        if (root.military != null && root.military > 0) {
+            military = root.military;
+        }
+
+        if (root.sectors == null) return new SectorConfig(world, timeMinutes, military, sectors);
 
         for (SectorJson s : root.sectors) {
             if (s.id == null || s.points == null || s.points.isEmpty()) continue;
@@ -113,13 +152,16 @@ public final class SectorConfigLoader {
             sectors.add(new Sector(s.id, points, atkAreas, defAreas));
         }
 
-        return sectors;
+        return new SectorConfig(world, timeMinutes, military, sectors);
     }
 
     // ===== 默认模板 =====
 
     private static void writeDefault(Path file) throws IOException {
         Root root = new Root();
+        root.world = "minecraft:overworld";
+        root.time = 20;
+        root.military = 300;
         root.sectors = new ArrayList<>();
 
         SectorJson s = new SectorJson();
