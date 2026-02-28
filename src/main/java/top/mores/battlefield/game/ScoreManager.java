@@ -57,6 +57,15 @@ public final class ScoreManager {
         PENDING_TOASTS.clear();
     }
 
+
+    public static void clearPlayer(UUID playerId) {
+        SCORES.remove(playerId);
+        LAST_BONUS.remove(playerId);
+        LAST_BONUS_TICK.remove(playerId);
+        LAST_KILL_TICK.remove(playerId);
+        STREAK_SQUAD_KILLS.remove(playerId);
+        PENDING_TOASTS.remove(playerId);
+    }
     public static int getScore(UUID playerId) {
         return SCORES.getOrDefault(playerId, 0);
     }

@@ -135,6 +135,7 @@ public final class BattlefieldHudOverlay {
         renderCenterScore(g, mc, screenWidth, screenHeight);
         renderSquadScore(g, mc, screenWidth);
         renderOutsideAreaWarning(g, mc, screenWidth, screenHeight);
+        renderPhaseOverlay(g, mc, screenWidth, screenHeight);
     }
 
     private static void renderCenterScore(GuiGraphics g, Minecraft mc, int screenWidth, int screenHeight) {
@@ -258,6 +259,31 @@ public final class BattlefieldHudOverlay {
 
         g.drawString(mc.font, title, cx - titleW / 2, y, WARNING_TEXT, true);
         g.drawString(mc.font, countdown, cx - cdW / 2, y + 14, WHITE, true);
+    }
+
+
+    private static void renderPhaseOverlay(GuiGraphics g, Minecraft mc, int screenWidth, int screenHeight) {
+        if (ClientGameState.phase != 1 && ClientGameState.phase != 3) return;
+
+        g.fill(0, 0, screenWidth, screenHeight, 0x99000000);
+        String title = ClientGameState.overlayTitle == null ? "" : ClientGameState.overlayTitle;
+        String sub = ClientGameState.overlaySub == null ? "" : ClientGameState.overlaySub;
+        int sec = Mth.ceil(Math.max(0, ClientGameState.overlayTicks) / 20.0f);
+
+        int cx = screenWidth / 2;
+        int y = screenHeight / 2 - 20;
+
+        int tw = mc.font.width(title);
+        g.drawString(mc.font, title, cx - tw / 2, y, WHITE, true);
+
+        if (!sub.isBlank()) {
+            int sw = mc.font.width(sub);
+            g.drawString(mc.font, sub, cx - sw / 2, y + 12, 0xFFCCCCCC, true);
+        }
+
+        String cd = sec + " 秒";
+        int cw = mc.font.width(cd);
+        g.drawString(mc.font, cd, cx - cw / 2, y + 24, WHITE, true);
     }
 
     /**

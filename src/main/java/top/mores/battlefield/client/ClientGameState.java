@@ -31,6 +31,10 @@ public final class ClientGameState {
     public static List<Integer> squadPlayerScores = Collections.emptyList();
     public static int squadTotalScore = 0;
     public static List<S2CGameStatePacket.PointInfo> points = Collections.emptyList();
+    public static int phase = 0;
+    public static String overlayTitle = "";
+    public static String overlaySub = "";
+    public static int overlayTicks = 0;
     private static final Map<String, Integer> lastProgressById = new HashMap<>();
     private static final Map<String, Byte> lastOwnerTeamById = new HashMap<>();
     public static final Map<String, Integer> deltaProgressById = new HashMap<>();
@@ -66,7 +70,8 @@ public final class ClientGameState {
     public static void update(boolean inBattle0, byte myTeam0, int atk, int def,
                               int remainTicks, int score, int bonus,
                               List<String> squadIds, List<Integer> squadScores, int squadTotal,
-                              List<S2CGameStatePacket.PointInfo> pts) {
+                              List<S2CGameStatePacket.PointInfo> pts,
+                              int phase0, String overlayTitle0, String overlaySub0, int overlayTicks0) {
         int prevMyScore = myScore;
         inBattle = inBattle0;
 
@@ -94,6 +99,10 @@ public final class ClientGameState {
         squadPlayerScores = squadScores;
         squadTotalScore = squadTotal;
         points = pts;
+        phase = phase0;
+        overlayTitle = overlayTitle0 == null ? "" : overlayTitle0;
+        overlaySub = overlaySub0 == null ? "" : overlaySub0;
+        overlayTicks = overlayTicks0;
         deltaProgressById.clear();
 
         for (S2CGameStatePacket.PointInfo p : pts) {
@@ -143,6 +152,10 @@ public final class ClientGameState {
         squadPlayerScores = Collections.emptyList();
         squadTotalScore = 0;
         points = Collections.emptyList();
+        phase = 0;
+        overlayTitle = "";
+        overlaySub = "";
+        overlayTicks = 0;
         attackerAreas = Collections.emptyList();
         defenderAreas = Collections.emptyList();
         sectorIndex = 0;

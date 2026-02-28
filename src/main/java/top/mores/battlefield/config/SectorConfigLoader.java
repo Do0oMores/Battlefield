@@ -4,6 +4,10 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonIOException;
 import com.google.gson.JsonSyntaxException;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.phys.Vec3;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
 
@@ -13,6 +17,7 @@ import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public final class SectorConfigLoader {
@@ -22,25 +27,84 @@ public final class SectorConfigLoader {
     private SectorConfigLoader() {
     }
 
-    // ===== JSON DTO（只用于反序列化） =====
-
     private static class Root {
         String world;
         Integer time;
         Integer military;
+        Integer maxPlayerNumber;
+        Integer attackNumber;
+        Integer defendNumber;
+        Integer minPlayerNumber;
+        PositionJson wait;
+        PositionJson lobby;
+        PositionJson firstAttackSpawnPoint;
+        PositionJson firstDefendSpawnPoint;
+        List<String> winCommand;
+        List<String> loseCommand;
         List<SectorJson> sectors;
+    }
+
+    public static final class Position {
+        public final String world;
+        public final double x;
+        public final double y;
+        public final double z;
+
+        public Position(String world, double x, double y, double z) {
+            this.world = world;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        public ServerLevel resolveLevel(MinecraftServer server, ServerLevel fallback) {
+            ResourceLocation id = ResourceLocation.tryParse(world);
+            if (id == null) {
+                return fallback;
+            }
+            ServerLevel level = server.getLevel(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, id));
+            return level != null ? level : fallback;
+        }
+
+        public Vec3 toVec3() {
+            return new Vec3(x, y, z);
+        }
     }
 
     public static final class SectorConfig {
         public final String world;
         public final int timeMinutes;
         public final int military;
+        public final int maxPlayerNumber;
+        public final int attackNumber;
+        public final int defendNumber;
+        public final int minPlayerNumber;
+        public final Position wait;
+        public final Position lobby;
+        public final Position firstAttackSpawnPoint;
+        public final Position firstDefendSpawnPoint;
+        public final List<String> winCommand;
+        public final List<String> loseCommand;
         public final List<Sector> sectors;
 
-        public SectorConfig(String world, int timeMinutes, int military, List<Sector> sectors) {
+        public SectorConfig(String world, int timeMinutes, int military,
+                            int maxPlayerNumber, int attackNumber, int defendNumber, int minPlayerNumber,
+                            Position wait, Position lobby, Position firstAttackSpawnPoint, Position firstDefendSpawnPoint,
+                            List<String> winCommand, List<String> loseCommand,
+                            List<Sector> sectors) {
             this.world = world;
             this.timeMinutes = timeMinutes;
             this.military = military;
+            this.maxPlayerNumber = maxPlayerNumber;
+            this.attackNumber = attackNumber;
+            this.defendNumber = defendNumber;
+            this.minPlayerNumber = minPlayerNumber;
+            this.wait = wait;
+            this.lobby = lobby;
+            this.firstAttackSpawnPoint = firstAttackSpawnPoint;
+            this.firstDefendSpawnPoint = firstDefendSpawnPoint;
+            this.winCommand = winCommand;
+            this.loseCommand = loseCommand;
             this.sectors = sectors;
         }
     }
@@ -62,7 +126,12 @@ public final class SectorConfigLoader {
         double radius;
     }
 
-    // ===== 对外入口 =====
+    private static class PositionJson {
+        String world;
+        Double x;
+        Double y;
+        Double z;
+    }
 
     public static List<Sector> load(Path configDir) {
         return loadConfig(configDir).sectors;
@@ -88,16 +157,25 @@ public final class SectorConfigLoader {
         }
     }
 
-    // ===== 解析为 Sector =====
-
     private static SectorConfig parse(Root root) {
         List<Sector> sectors = new ArrayList<>();
         String world = "minecraft:overworld";
         int timeMinutes = 20;
         int military = 300;
+        int maxPlayerNumber = 32;
+        int attackNumber = 16;
+        int defendNumber = 16;
+        int minPlayerNumber = 2;
+        Position wait = new Position("minecraft:overworld", 0.5, 64, 0.5);
+        Position lobby = new Position("minecraft:overworld", 0.5, 64, 0.5);
+        Position firstAttackSpawnPoint = new Position("minecraft:overworld", 16.5, 64, 0.5);
+        Position firstDefendSpawnPoint = new Position("minecraft:overworld", -16.5, 64, 0.5);
+        List<String> winCommand = Collections.emptyList();
+        List<String> loseCommand = Collections.emptyList();
 
         if (root == null) {
-            return new SectorConfig(world, timeMinutes, military, sectors);
+            return new SectorConfig(world, timeMinutes, military, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
+                    wait, lobby, firstAttackSpawnPoint, firstDefendSpawnPoint, winCommand, loseCommand, sectors);
         }
 
         if (root.world != null && !root.world.isBlank()) {
@@ -109,13 +187,37 @@ public final class SectorConfigLoader {
         if (root.military != null && root.military > 0) {
             military = root.military;
         }
+        if (root.maxPlayerNumber != null && root.maxPlayerNumber > 0) {
+            maxPlayerNumber = root.maxPlayerNumber;
+        }
+        attackNumber = Math.max(1, maxPlayerNumber / 2);
+        defendNumber = Math.max(1, maxPlayerNumber - attackNumber);
+        if (root.attackNumber != null && root.attackNumber > 0) {
+            attackNumber = root.attackNumber;
+        }
+        if (root.defendNumber != null && root.defendNumber > 0) {
+            defendNumber = root.defendNumber;
+        }
+        if (root.minPlayerNumber != null && root.minPlayerNumber > 1) {
+            minPlayerNumber = root.minPlayerNumber;
+        }
+        wait = parsePos(root.wait, wait);
+        lobby = parsePos(root.lobby, lobby);
+        firstAttackSpawnPoint = parsePos(root.firstAttackSpawnPoint, firstAttackSpawnPoint);
+        firstDefendSpawnPoint = parsePos(root.firstDefendSpawnPoint, firstDefendSpawnPoint);
+        if (root.winCommand != null) {
+            winCommand = root.winCommand.stream().filter(s -> s != null && !s.isBlank()).toList();
+        }
+        if (root.loseCommand != null) {
+            loseCommand = root.loseCommand.stream().filter(s -> s != null && !s.isBlank()).toList();
+        }
 
-        if (root.sectors == null) return new SectorConfig(world, timeMinutes, military, sectors);
+        if (root.sectors == null) return new SectorConfig(world, timeMinutes, military, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
+                wait, lobby, firstAttackSpawnPoint, firstDefendSpawnPoint, winCommand, loseCommand, sectors);
 
         for (SectorJson s : root.sectors) {
             if (s.id == null || s.points == null || s.points.isEmpty()) continue;
 
-            // points
             List<CapturePoint> points = new ArrayList<>();
             for (PointJson p : s.points) {
                 if (p == null || p.id == null || p.id.isBlank() || p.radius <= 0) continue;
@@ -129,7 +231,6 @@ public final class SectorConfigLoader {
                 points.add(cp);
             }
 
-            // attacker areas
             List<Sector.AreaCircle> atkAreas = new ArrayList<>();
             if (s.attackerAreas != null) {
                 for (AreaJson a : s.attackerAreas) {
@@ -138,7 +239,6 @@ public final class SectorConfigLoader {
                 }
             }
 
-            // defender areas
             List<Sector.AreaCircle> defAreas = new ArrayList<>();
             if (s.defenderAreas != null) {
                 for (AreaJson a : s.defenderAreas) {
@@ -152,16 +252,32 @@ public final class SectorConfigLoader {
             sectors.add(new Sector(s.id, points, atkAreas, defAreas));
         }
 
-        return new SectorConfig(world, timeMinutes, military, sectors);
+        return new SectorConfig(world, timeMinutes, military, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
+                wait, lobby, firstAttackSpawnPoint, firstDefendSpawnPoint, winCommand, loseCommand, sectors);
     }
 
-    // ===== 默认模板 =====
+    private static Position parsePos(PositionJson p, Position fallback) {
+        if (p == null || p.world == null || p.world.isBlank() || p.x == null || p.y == null || p.z == null) {
+            return fallback;
+        }
+        return new Position(p.world, p.x, p.y, p.z);
+    }
 
     private static void writeDefault(Path file) throws IOException {
         Root root = new Root();
         root.world = "minecraft:world";
         root.time = 20;
         root.military = 300;
+        root.maxPlayerNumber = 32;
+        root.attackNumber = 16;
+        root.defendNumber = 16;
+        root.minPlayerNumber = 2;
+        root.wait = pos("minecraft:world", 0.5, 64, 0.5);
+        root.lobby = pos("minecraft:world", 0.5, 64, 0.5);
+        root.firstAttackSpawnPoint = pos("minecraft:world", 20.5, 64, 0.5);
+        root.firstDefendSpawnPoint = pos("minecraft:world", -20.5, 64, 0.5);
+        root.winCommand = List.of("say {player} 获胜");
+        root.loseCommand = List.of("say {player} 失败");
         root.sectors = new ArrayList<>();
 
         SectorJson s = new SectorJson();
@@ -192,5 +308,14 @@ public final class SectorConfigLoader {
         try (Writer w = Files.newBufferedWriter(file)) {
             GSON.toJson(root, w);
         }
+    }
+
+    private static PositionJson pos(String world, double x, double y, double z) {
+        PositionJson p = new PositionJson();
+        p.world = world;
+        p.x = x;
+        p.y = y;
+        p.z = z;
+        return p;
     }
 }
