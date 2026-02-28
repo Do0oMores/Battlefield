@@ -239,6 +239,10 @@ public final class BattlefieldHudOverlay {
     private static void renderOutsideAreaWarning(GuiGraphics g, Minecraft mc, int screenWidth, int screenHeight) {
         if (!BattlefieldAreaRenderer.isOutsideMovableArea()) return;
 
+        if (BattlefieldAreaRenderer.consumeOutsideAreaVoicePending()) {
+            VoiceManager.play(ModSounds.VOICE_RETURN_AREA.get());
+        }
+
         g.fill(0, 0, screenWidth, screenHeight, 0x88000000);
 
         String title = "您正在离开战斗区域";

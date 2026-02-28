@@ -26,6 +26,7 @@ public final class BattlefieldAreaRenderer {
 
     private static final int SEGMENTS = 48;
     private static int outsideAreaTicks = 0;
+    private static boolean outsideAreaVoicePending = false;
 
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
@@ -92,11 +93,13 @@ public final class BattlefieldAreaRenderer {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) {
             outsideAreaTicks = 0;
+            outsideAreaVoicePending = false;
             return;
         }
 
         if (!ClientGameState.inBattle) {
             outsideAreaTicks = 0;
+            outsideAreaVoicePending = false;
             return;
         }
 
@@ -105,13 +108,19 @@ public final class BattlefieldAreaRenderer {
         var myAreas = (myTeam == 0) ? ClientGameState.attackerAreas : ClientGameState.defenderAreas;
         if (myAreas == null || myAreas.isEmpty()) {
             outsideAreaTicks = 0;
+            outsideAreaVoicePending = false;
             return;
         }
 
+        boolean wasOutside = outsideAreaTicks > 0;
         if (BattlefieldAreaRules.isInsideMovableArea(myTeam, mc.player.getX(), mc.player.getZ())) {
             outsideAreaTicks = 0;
+            outsideAreaVoicePending = false;
         } else {
             outsideAreaTicks++;
+            if (!wasOutside) {
+                outsideAreaVoicePending = true;
+            }
         }
     }
 
@@ -121,6 +130,14 @@ public final class BattlefieldAreaRenderer {
 
     public static int getOutsideAreaTicks() {
         return outsideAreaTicks;
+    }
+
+    public static boolean consumeOutsideAreaVoicePending() {
+        if (!outsideAreaVoicePending) {
+            return false;
+        }
+        outsideAreaVoicePending = false;
+        return true;
     }
 
     private static void drawGroundCircle(PoseStack poseStack, VertexConsumer vc,
