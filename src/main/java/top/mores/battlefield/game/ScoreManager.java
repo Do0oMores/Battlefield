@@ -72,6 +72,10 @@ public final class ScoreManager {
         addScore(player, score, ScoreReason.CAPTURE);
     }
 
+    public static void addDefendScore(ServerPlayer player, int score) {
+        addScore(player, score, ScoreReason.DEFEND);
+    }
+
     public static void onBombDamage(ServerLevel level, UUID owner, UUID victim, float damage) {
         if (damage <= 0) return;
         if (owner.equals(victim)) return;
