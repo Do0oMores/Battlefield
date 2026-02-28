@@ -17,6 +17,7 @@ import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CGameStatePacket;
+import top.mores.battlefield.server.MohistTeleport;
 import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
@@ -381,6 +382,10 @@ public final class BattlefieldGameManager {
     private static void teleportTo(ServerPlayer player, SectorConfigLoader.Position pos) {
         if (pos == null) return;
         ServerLevel level = pos.resolveLevel(player.getServer(), player.serverLevel());
+        if (level != player.serverLevel()) {
+            MohistTeleport.teleportToWorld(player, pos.world(), pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
+            return;
+        }
         player.teleportTo(level, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
     }
 
