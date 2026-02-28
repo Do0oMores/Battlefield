@@ -26,9 +26,6 @@ public class SectorManager {
 
         Sector sector = session.currentSector();
         if (sector == null) {
-            session.running = false;
-            SquadManager.clearAll(session.level);
-            broadcast(session.level, "攻方已推进至最后战线，测试局结束！");
             return;
         }
 

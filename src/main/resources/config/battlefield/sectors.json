@@ -2,6 +2,40 @@
   "world": "minecraft:world",
   "time": 20,
   "military": 300,
+  "maxPlayerNumber": 32,
+  "attackNumber": 16,
+  "defendNumber": 16,
+  "minPlayerNumber": 2,
+  "wait": {
+    "world": "minecraft:world",
+    "x": 0.5,
+    "y": 64.0,
+    "z": 0.5
+  },
+  "lobby": {
+    "world": "minecraft:world",
+    "x": 0.5,
+    "y": 64.0,
+    "z": 0.5
+  },
+  "firstAttackSpawnPoint": {
+    "world": "minecraft:world",
+    "x": 20.5,
+    "y": 64.0,
+    "z": 0.5
+  },
+  "firstDefendSpawnPoint": {
+    "world": "minecraft:world",
+    "x": -20.5,
+    "y": 64.0,
+    "z": 0.5
+  },
+  "winCommand": [
+    "say {player} 胜利"
+  ],
+  "loseCommand": [
+    "say {player} 失败"
+  ],
   "sectors": [
     {
       "id": "S1",

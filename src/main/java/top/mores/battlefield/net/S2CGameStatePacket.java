@@ -15,13 +15,10 @@ public class S2CGameStatePacket {
         public String id;
         public double x, y, z;
         public float radius;
-        public int progress; // [-100..100]
-        /**
-         * 0=ATTACKERS 1=DEFENDERS 2=SPECTATOR/UNKNOWN
-         */
+        public int progress;
         public byte ownerTeam;
-        public int attackersIn; // 点内攻方人数
-        public int defendersIn; // 点内守方人数
+        public int attackersIn;
+        public int defendersIn;
 
         public PointInfo(String id, double x, double y, double z, float radius, int progress, byte ownerTeam, int attackersIn, int defendersIn) {
             this.id = id;
@@ -36,9 +33,6 @@ public class S2CGameStatePacket {
         }
     }
 
-    /**
-     * 0=ATTACKERS 1=DEFENDERS 2=SPECTATOR
-     */
     public boolean inBattle;
     public byte myTeam;
 
@@ -51,11 +45,15 @@ public class S2CGameStatePacket {
     public List<Integer> squadPlayerScores;
     public int squadTotalScore;
     public List<PointInfo> points;
+    public int phase;
+    public String overlayTitle;
+    public String overlaySub;
+    public int overlayTicks;
 
     public S2CGameStatePacket(boolean inBattle, byte myTeam, int attackerTickets, int defenderTickets,
                               int remainingTimeTicks, int myScore, int myLastBonus,
                               List<String> squadPlayerIds, List<Integer> squadPlayerScores, int squadTotalScore,
-                              List<PointInfo> points) {
+                              List<PointInfo> points, int phase, String overlayTitle, String overlaySub, int overlayTicks) {
         this.inBattle = inBattle;
         this.myTeam = myTeam;
         this.attackerTickets = attackerTickets;
@@ -67,6 +65,10 @@ public class S2CGameStatePacket {
         this.squadPlayerScores = squadPlayerScores;
         this.squadTotalScore = squadTotalScore;
         this.points = points;
+        this.phase = phase;
+        this.overlayTitle = overlayTitle;
+        this.overlaySub = overlaySub;
+        this.overlayTicks = overlayTicks;
     }
 
     public static void encode(S2CGameStatePacket msg, FriendlyByteBuf buf) {
@@ -97,6 +99,11 @@ public class S2CGameStatePacket {
             buf.writeVarInt(p.attackersIn);
             buf.writeVarInt(p.defendersIn);
         }
+
+        buf.writeVarInt(msg.phase);
+        buf.writeUtf(msg.overlayTitle == null ? "" : msg.overlayTitle);
+        buf.writeUtf(msg.overlaySub == null ? "" : msg.overlaySub, 512);
+        buf.writeVarInt(msg.overlayTicks);
     }
 
     public static S2CGameStatePacket decode(FriendlyByteBuf buf) {
@@ -129,9 +136,15 @@ public class S2CGameStatePacket {
             int dIn = buf.readVarInt();
             pts.add(new PointInfo(id, x, y, z, r, prog, ownerTeam, aIn, dIn));
         }
+        int phase = buf.readVarInt();
+        String overlayTitle = buf.readUtf();
+        String overlaySub = buf.readUtf(512);
+        int overlayTicks = buf.readVarInt();
+
         return new S2CGameStatePacket(inBattle, myTeam, atk, def,
                 remainingTimeTicks, myScore, myLastBonus,
-                squadIds, squadScores, squadTotal, pts);
+                squadIds, squadScores, squadTotal, pts,
+                phase, overlayTitle, overlaySub, overlayTicks);
     }
 
     public static void handle(S2CGameStatePacket msg, Supplier<NetworkEvent.Context> ctx) {
@@ -140,7 +153,7 @@ public class S2CGameStatePacket {
                 ClientGameState.update(msg.inBattle, msg.myTeam, msg.attackerTickets, msg.defenderTickets,
                         msg.remainingTimeTicks, msg.myScore, msg.myLastBonus,
                         msg.squadPlayerIds, msg.squadPlayerScores, msg.squadTotalScore,
-                        msg.points);
+                        msg.points, msg.phase, msg.overlayTitle, msg.overlaySub, msg.overlayTicks);
             }
         });
         ctx.get().setPacketHandled(true);
