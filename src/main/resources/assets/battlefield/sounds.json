@@ -4,5 +4,6 @@
   "voice.point_captured": { "sounds": [ { "name": "battlefield:voice/takenobjective", "stream": true } ] },
   "voice.sector_push": { "sounds": [ { "name": "battlefield:voice/sector_push", "stream": true } ] },
   "voice.victory": { "sounds": [ { "name": "battlefield:voice/victory", "stream": true } ] },
-  "voice.defeat": { "sounds": [ { "name": "battlefield:voice/defeat", "stream": true } ] }
+  "voice.defeat": { "sounds": [ { "name": "battlefield:voice/defeat", "stream": true } ] },
+  "voice.return_area": {"sounds": [ { "name": "battlefield:voice/returnarea", "stream": true } ]}
 }

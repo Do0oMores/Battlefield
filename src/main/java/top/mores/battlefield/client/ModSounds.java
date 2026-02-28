@@ -35,9 +35,14 @@ public final class ModSounds {
             SOUND_EVENTS.register("voice.defeat",
                     () -> SoundEvent.createVariableRangeEvent(id("voice.defeat")));
 
+    public static final RegistryObject<SoundEvent> VOICE_RETURN_AREA =
+            SOUND_EVENTS.register("voice.return_area",
+                    () -> SoundEvent.createVariableRangeEvent(id("voice.return_area")));
+
     private static ResourceLocation id(String path) {
         return new ResourceLocation(Battlefield.MODID, path);
     }
 
-    private ModSounds() {}
+    private ModSounds() {
+    }
 }

@@ -131,7 +131,6 @@ public final class BattlefieldHudOverlay {
                 drawUnderBarOnly(g, cx, cy, size, blueCount, redCount);
             }
         }
-
         renderOutsideAreaWarning(g, mc, screenWidth, screenHeight);
     }
 
