@@ -38,14 +38,29 @@ public class S2CGameStatePacket {
     public byte myTeam;
 
     public int attackerTickets;
-    public int defenderTickets; // 不用可填 -1
+    public int defenderTickets;
+    public int remainingTimeTicks;
+    public int myScore;
+    public int myLastBonus;
+    public List<String> squadPlayerIds;
+    public List<Integer> squadPlayerScores;
+    public int squadTotalScore;
     public List<PointInfo> points;
 
-    public S2CGameStatePacket(boolean inBattle, byte myTeam, int attackerTickets, int defenderTickets, List<PointInfo> points) {
+    public S2CGameStatePacket(boolean inBattle, byte myTeam, int attackerTickets, int defenderTickets,
+                              int remainingTimeTicks, int myScore, int myLastBonus,
+                              List<String> squadPlayerIds, List<Integer> squadPlayerScores, int squadTotalScore,
+                              List<PointInfo> points) {
         this.inBattle = inBattle;
         this.myTeam = myTeam;
         this.attackerTickets = attackerTickets;
         this.defenderTickets = defenderTickets;
+        this.remainingTimeTicks = remainingTimeTicks;
+        this.myScore = myScore;
+        this.myLastBonus = myLastBonus;
+        this.squadPlayerIds = squadPlayerIds;
+        this.squadPlayerScores = squadPlayerScores;
+        this.squadTotalScore = squadTotalScore;
         this.points = points;
     }
 
@@ -54,6 +69,16 @@ public class S2CGameStatePacket {
         buf.writeByte(msg.myTeam);
         buf.writeInt(msg.attackerTickets);
         buf.writeInt(msg.defenderTickets);
+        buf.writeInt(msg.remainingTimeTicks);
+        buf.writeInt(msg.myScore);
+        buf.writeInt(msg.myLastBonus);
+
+        buf.writeVarInt(msg.squadPlayerIds.size());
+        for (int i = 0; i < msg.squadPlayerIds.size(); i++) {
+            buf.writeUtf(msg.squadPlayerIds.get(i));
+            buf.writeInt(msg.squadPlayerScores.get(i));
+        }
+        buf.writeInt(msg.squadTotalScore);
 
         buf.writeVarInt(msg.points.size());
         for (PointInfo p : msg.points) {
@@ -73,6 +98,18 @@ public class S2CGameStatePacket {
         byte myTeam = buf.readByte();
         int atk = buf.readInt();
         int def = buf.readInt();
+        int remainingTimeTicks = buf.readInt();
+        int myScore = buf.readInt();
+        int myLastBonus = buf.readInt();
+
+        int squadN = buf.readVarInt();
+        List<String> squadIds = new ArrayList<>(squadN);
+        List<Integer> squadScores = new ArrayList<>(squadN);
+        for (int i = 0; i < squadN; i++) {
+            squadIds.add(buf.readUtf(32));
+            squadScores.add(buf.readInt());
+        }
+        int squadTotal = buf.readInt();
 
         int n = buf.readVarInt();
         List<PointInfo> pts = new ArrayList<>(n);
@@ -85,13 +122,18 @@ public class S2CGameStatePacket {
             int dIn = buf.readVarInt();
             pts.add(new PointInfo(id, x, y, z, r, prog, aIn, dIn));
         }
-        return new S2CGameStatePacket(inBattle, myTeam, atk, def, pts);
+        return new S2CGameStatePacket(inBattle, myTeam, atk, def,
+                remainingTimeTicks, myScore, myLastBonus,
+                squadIds, squadScores, squadTotal, pts);
     }
 
     public static void handle(S2CGameStatePacket msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
             if (Minecraft.getInstance().player != null) {
-                ClientGameState.update(msg.inBattle, msg.myTeam, msg.attackerTickets, msg.defenderTickets, msg.points);
+                ClientGameState.update(msg.inBattle, msg.myTeam, msg.attackerTickets, msg.defenderTickets,
+                        msg.remainingTimeTicks, msg.myScore, msg.myLastBonus,
+                        msg.squadPlayerIds, msg.squadPlayerScores, msg.squadTotalScore,
+                        msg.points);
             }
         });
         ctx.get().setPacketHandled(true);

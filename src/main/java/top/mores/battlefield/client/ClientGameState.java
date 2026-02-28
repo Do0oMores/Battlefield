@@ -21,7 +21,13 @@ public final class ClientGameState {
     public static byte myTeam = 2;
 
     public static int attackerTickets = 0;
-    public static int defenderTickets = -1;
+    public static int defenderTickets = 0;
+    public static int remainingTimeTicks = 0;
+    public static int myScore = 0;
+    public static int myLastBonus = 0;
+    public static List<String> squadPlayerIds = Collections.emptyList();
+    public static List<Integer> squadPlayerScores = Collections.emptyList();
+    public static int squadTotalScore = 0;
     public static List<S2CGameStatePacket.PointInfo> points = Collections.emptyList();
     private static final Map<String, Integer> lastProgressById = new HashMap<>();
     public static final Map<String, Integer> deltaProgressById = new HashMap<>();
@@ -31,7 +37,10 @@ public final class ClientGameState {
     public static List<S2CSectorAreaPacket.AreaCircle> attackerAreas = Collections.emptyList();
     public static List<S2CSectorAreaPacket.AreaCircle> defenderAreas = Collections.emptyList();
 
-    public static void update(boolean inBattle0, byte myTeam0, int atk, int def, List<S2CGameStatePacket.PointInfo> pts) {
+    public static void update(boolean inBattle0, byte myTeam0, int atk, int def,
+                              int remainTicks, int score, int bonus,
+                              List<String> squadIds, List<Integer> squadScores, int squadTotal,
+                              List<S2CGameStatePacket.PointInfo> pts) {
         inBattle = inBattle0;
 
         if (!inBattle) {
@@ -42,6 +51,12 @@ public final class ClientGameState {
         myTeam = myTeam0;
         attackerTickets = atk;
         defenderTickets = def;
+        remainingTimeTicks = remainTicks;
+        myScore = score;
+        myLastBonus = bonus;
+        squadPlayerIds = squadIds;
+        squadPlayerScores = squadScores;
+        squadTotalScore = squadTotal;
         points = pts;
         deltaProgressById.clear();
 
@@ -91,7 +106,13 @@ public final class ClientGameState {
     public static void reset() {
         myTeam = 2;
         attackerTickets = 0;
-        defenderTickets = -1;
+        defenderTickets = 0;
+        remainingTimeTicks = 0;
+        myScore = 0;
+        myLastBonus = 0;
+        squadPlayerIds = Collections.emptyList();
+        squadPlayerScores = Collections.emptyList();
+        squadTotalScore = 0;
         points = Collections.emptyList();
         attackerAreas = Collections.emptyList();
         defenderAreas = Collections.emptyList();

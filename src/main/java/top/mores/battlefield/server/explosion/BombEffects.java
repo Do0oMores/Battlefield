@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.StainedGlassBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import top.mores.battlefield.game.ScoreManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 
@@ -85,6 +86,10 @@ public final class BombEffects {
             if (dmg <= 0.1f) continue;
 
             p.hurt(src, dmg);
+            ScoreManager.onBombDamage(level, ownerId, p.getUUID(), dmg);
+            if (!p.isAlive()) {
+                ScoreManager.onBombKill(level, ownerId, p.getUUID());
+            }
 
             Vec3 v = p.getDeltaMovement();
             p.setDeltaMovement(0.0, v.y, 0.0);

@@ -5,6 +5,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
+import org.lwjgl.glfw.GLFW;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
 import top.mores.battlefield.game.BattlefieldAreaRules;
 import top.mores.battlefield.net.S2CGameStatePacket;
@@ -54,13 +55,11 @@ public final class BattlefieldHudOverlay {
         int centerX = screenWidth / 2;
 
         // ✅ 票数显示：永远显示我方票数（蓝）
-        int myTickets = (ClientGameState.myTeam == 0)
-                ? ClientGameState.attackerTickets
-                : ClientGameState.defenderTickets;
-
-        String tickets = String.valueOf(myTickets);
-        int tw = mc.font.width(tickets);
-        g.drawString(mc.font, tickets, centerX - tw / 2, topY, WHITE, true);
+        String timer = formatRemainingTime(ClientGameState.remainingTimeTicks);
+        String tickets = String.format("%d : %d", ClientGameState.attackerTickets, ClientGameState.defenderTickets);
+        String topLine = timer + "   " + tickets;
+        int tw = mc.font.width(topLine);
+        g.drawString(mc.font, topLine, centerX - tw / 2, topY, WHITE, true);
 
         // 菱形排布
         int diamondsY = topY + 14;
@@ -131,7 +130,52 @@ public final class BattlefieldHudOverlay {
                 drawUnderBarOnly(g, cx, cy, size, blueCount, redCount);
             }
         }
+
+        renderCenterScore(g, mc, screenWidth, screenHeight);
+        renderSquadScore(g, mc, screenWidth);
         renderOutsideAreaWarning(g, mc, screenWidth, screenHeight);
+    }
+
+    private static void renderCenterScore(GuiGraphics g, Minecraft mc, int screenWidth, int screenHeight) {
+        String total = String.valueOf(ClientGameState.myScore);
+        int y = screenHeight / 2 + 36;
+        int totalW = mc.font.width(total);
+        g.drawString(mc.font, total, screenWidth / 2 - totalW / 2, y, WHITE, true);
+
+        if (ClientGameState.myLastBonus > 0) {
+            String bonus = "+" + ClientGameState.myLastBonus;
+            int bonusW = mc.font.width(bonus);
+            g.drawString(mc.font, bonus, screenWidth / 2 - bonusW / 2, y + 12, 0xFF88FF88, true);
+        }
+    }
+
+    private static void renderSquadScore(GuiGraphics g, Minecraft mc, int screenWidth) {
+        boolean pDown = GLFW.glfwGetKey(mc.getWindow().getWindow(), GLFW.GLFW_KEY_P) == GLFW.GLFW_PRESS;
+        int baseX = pDown ? 22 : 8;
+        int y = 8;
+
+        var ids = ClientGameState.squadPlayerIds;
+        var scores = ClientGameState.squadPlayerScores;
+        for (int i = 0; i < ids.size(); i++) {
+            String id = ids.get(i);
+            g.drawString(mc.font, id, baseX, y, WHITE, true);
+
+            if (i == 0) {
+                g.drawString(mc.font, "总分:" + ClientGameState.squadTotalScore, baseX + mc.font.width(id) + 6, y, 0xFF66CCFF, true);
+            }
+
+            if (pDown && i < scores.size()) {
+                g.drawString(mc.font, String.valueOf(scores.get(i)), baseX + 90, y, 0xFFFFFF66, true);
+            }
+            y += 11;
+        }
+    }
+
+    private static String formatRemainingTime(int ticks) {
+        int totalSec = Math.max(0, ticks / 20);
+        int min = totalSec / 60;
+        int sec = totalSec % 60;
+        return String.format("%02d:%02d", min, sec);
     }
 
     private static void renderOutsideAreaWarning(GuiGraphics g, Minecraft mc, int screenWidth, int screenHeight) {
