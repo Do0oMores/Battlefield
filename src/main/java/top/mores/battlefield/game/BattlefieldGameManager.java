@@ -29,6 +29,10 @@ import java.util.stream.Collectors;
 
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class BattlefieldGameManager {
+    private static final int TICKS_PER_SECOND = 20;
+    private static final int COUNTDOWN_SECONDS = 10;
+    private static final int ENDING_SECONDS = 10;
+
     private BattlefieldGameManager() {
     }
 
@@ -192,11 +196,10 @@ public final class BattlefieldGameManager {
 
     private static void beginCountdown() {
         PHASE = Phase.COUNTDOWN;
-        countdownTicks = 10 * 20;
+        countdownTicks = COUNTDOWN_SECONDS * TICKS_PER_SECOND;
         ensureSession();
         forEachParticipant(sp -> {
-            if (TeamManager.getTeam(sp) == TeamId.ATTACKERS) teleportTo(sp, config.firstAttackSpawnPoint);
-            if (TeamManager.getTeam(sp) == TeamId.DEFENDERS) teleportTo(sp, config.firstDefendSpawnPoint);
+            teleportToTeamSpawn(sp, TeamManager.getTeam(sp));
         });
     }
 
@@ -208,7 +211,7 @@ public final class BattlefieldGameManager {
     private static void startEnding(TeamId winner) {
         PHASE = Phase.ENDING;
         WINNER = winner;
-        endingTicks = 10 * 20;
+        endingTicks = ENDING_SECONDS * TICKS_PER_SECOND;
 
         forEachParticipant(sp -> {
             sp.getInventory().clearContent();
@@ -298,29 +301,14 @@ public final class BattlefieldGameManager {
 
         forEachParticipant(sp -> {
             TeamId t = TeamManager.getTeam(sp);
-            byte myTeam = (byte) (t == TeamId.ATTACKERS ? 0 : (t == TeamId.DEFENDERS ? 1 : 2));
+            byte myTeam = toClientTeamCode(t);
 
             int remain = SESSION != null ? SESSION.getRemainingTicks() : 0;
             int atk = SESSION != null ? SESSION.attackerTickets : 0;
             int def = SESSION != null ? SESSION.defenderTickets : 0;
             List<S2CGameStatePacket.PointInfo> list = buildPoints();
 
-            List<String> squadIds = new ArrayList<>();
-            List<Integer> squadScores = new ArrayList<>();
-            int squadTotal = 0;
-            if (t != TeamId.SPECTATOR) {
-                int squadId = SquadManager.getSquad(sp);
-                var members = SquadManager.getSquadMembers(sp.serverLevel(), t, squadId);
-                members.sort(Comparator.comparing(UUID::toString));
-                for (UUID id : members) {
-                    var member = sp.serverLevel().getPlayerByUUID(id);
-                    String display = member != null ? member.getGameProfile().getName() : id.toString().substring(0, 8);
-                    int sc = ScoreManager.getScore(id);
-                    squadIds.add(display);
-                    squadScores.add(sc);
-                    squadTotal += sc;
-                }
-            }
+            SquadSnapshot squadSnapshot = buildSquadSnapshot(sp, t);
 
             String overlayTitle = "";
             String overlaySub = "";
@@ -338,10 +326,37 @@ public final class BattlefieldGameManager {
             var pkt = new S2CGameStatePacket(PHASE != Phase.WAITING, myTeam,
                     atk, def,
                     remain, ScoreManager.getScore(sp.getUUID()), ScoreManager.getLastBonus(sp.getUUID(), sp.serverLevel().getGameTime()),
-                    squadIds, squadScores, squadTotal, list,
+                    squadSnapshot.memberNames(), squadSnapshot.memberScores(), squadSnapshot.totalScore(), list,
                     PHASE.ordinal(), overlayTitle, overlaySub, overlayTicks);
             BattlefieldNet.sendToPlayer(sp, pkt);
         });
+    }
+
+    private static SquadSnapshot buildSquadSnapshot(ServerPlayer player, TeamId teamId) {
+        if (teamId == TeamId.SPECTATOR) {
+            return SquadSnapshot.EMPTY;
+        }
+
+        int squadId = SquadManager.getSquad(player);
+        List<UUID> members = SquadManager.getSquadMembers(player.serverLevel(), teamId, squadId);
+        members.sort(Comparator.comparing(UUID::toString));
+
+        List<String> memberNames = new ArrayList<>(members.size());
+        List<Integer> memberScores = new ArrayList<>(members.size());
+        int totalScore = 0;
+        for (UUID id : members) {
+            var member = player.serverLevel().getPlayerByUUID(id);
+            String display = member != null ? member.getGameProfile().getName() : id.toString().substring(0, 8);
+            int score = ScoreManager.getScore(id);
+            memberNames.add(display);
+            memberScores.add(score);
+            totalScore += score;
+        }
+        return new SquadSnapshot(memberNames, memberScores, totalScore);
+    }
+
+    private record SquadSnapshot(List<String> memberNames, List<Integer> memberScores, int totalScore) {
+        private static final SquadSnapshot EMPTY = new SquadSnapshot(Collections.emptyList(), Collections.emptyList(), 0);
     }
 
     private static List<S2CGameStatePacket.PointInfo> buildPoints() {
@@ -376,8 +391,8 @@ public final class BattlefieldGameManager {
     }
 
     private static TeamId autoAssignWithLimit(ServerPlayer player) {
-        long atk = PARTICIPANTS.stream().map(player.serverLevel()::getPlayerByUUID).filter(Objects::nonNull).filter(sp -> TeamManager.getTeam((ServerPlayer) sp) == TeamId.ATTACKERS).count();
-        long def = PARTICIPANTS.stream().map(player.serverLevel()::getPlayerByUUID).filter(Objects::nonNull).filter(sp -> TeamManager.getTeam((ServerPlayer) sp) == TeamId.DEFENDERS).count();
+        long atk = countParticipantsInTeam(player.serverLevel(), TeamId.ATTACKERS);
+        long def = countParticipantsInTeam(player.serverLevel(), TeamId.DEFENDERS);
 
         TeamId pick;
         if (atk >= config.attackNumber && def >= config.defendNumber) {
@@ -391,6 +406,28 @@ public final class BattlefieldGameManager {
         }
         TeamManager.setTeam(player, pick);
         return pick;
+    }
+
+    private static long countParticipantsInTeam(ServerLevel level, TeamId teamId) {
+        return PARTICIPANTS.stream()
+                .map(level::getPlayerByUUID)
+                .filter(Objects::nonNull)
+                .filter(sp -> TeamManager.getTeam(sp) == teamId)
+                .count();
+    }
+
+    private static byte toClientTeamCode(TeamId teamId) {
+        if (teamId == TeamId.ATTACKERS) return 0;
+        if (teamId == TeamId.DEFENDERS) return 1;
+        return 2;
+    }
+
+    private static void teleportToTeamSpawn(ServerPlayer player, TeamId teamId) {
+        if (teamId == TeamId.ATTACKERS) {
+            teleportTo(player, config.firstAttackSpawnPoint);
+        } else if (teamId == TeamId.DEFENDERS) {
+            teleportTo(player, config.firstDefendSpawnPoint);
+        }
     }
 
     private static void ensureConfig(ServerLevel defaultLevel) {
@@ -461,7 +498,7 @@ public final class BattlefieldGameManager {
             if (!PARTICIPANTS.contains(sp.getUUID())) continue;
 
             TeamId t = TeamManager.getTeam(sp);
-            byte myTeam = (byte) (t == TeamId.ATTACKERS ? 0 : (t == TeamId.DEFENDERS ? 1 : 2));
+            byte myTeam = toClientTeamCode(t);
             if (myTeam != 0 && myTeam != 1) {
                 OUTSIDE_AREA_TICKS.remove(sp.getUUID());
                 continue;

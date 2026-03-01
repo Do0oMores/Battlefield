@@ -4,12 +4,15 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 
 public final class SquadManager {
+    private static final Random RANDOM = new Random();
+
     private SquadManager() {
     }
 
@@ -28,11 +31,11 @@ public final class SquadManager {
     }
 
     public static List<UUID> getSquadMembers(ServerLevel level, TeamId team, int squadId) {
-        if (team == TeamId.SPECTATOR || squadId <= 0) return java.util.Collections.emptyList();
+        if (team == TeamId.SPECTATOR || squadId <= 0) return Collections.emptyList();
         Map<UUID, Integer> map = SquadSavedData.get(level).mapFor(team);
         List<UUID> list = new ArrayList<>();
-        for (Map.Entry<UUID, Integer> en : map.entrySet()) {
-            if (en.getValue() == squadId) list.add(en.getKey());
+        for (Map.Entry<UUID, Integer> entry : map.entrySet()) {
+            if (entry.getValue() == squadId) list.add(entry.getKey());
         }
         return list;
     }
@@ -111,7 +114,7 @@ public final class SquadManager {
 
         int squad;
         if (!joinable.isEmpty()) {
-            squad = joinable.get(new Random().nextInt(joinable.size()));
+            squad = joinable.get(RANDOM.nextInt(joinable.size()));
         } else {
             squad = firstFreeSquadId(map);
             if (squad == 0) return 0;
