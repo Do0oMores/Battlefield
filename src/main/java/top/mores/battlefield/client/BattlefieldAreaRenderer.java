@@ -2,6 +2,7 @@ package top.mores.battlefield.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
@@ -27,6 +28,7 @@ public final class BattlefieldAreaRenderer {
     private static final int SEGMENTS = 48;
     private static int outsideAreaTicks = 0;
     private static boolean outsideAreaVoicePending = false;
+    private static ClientLevel lastLevel = null;
 
     @SubscribeEvent
     public static void onRenderLevel(RenderLevelStageEvent event) {
@@ -91,6 +93,15 @@ public final class BattlefieldAreaRenderer {
         if (event.phase != TickEvent.Phase.END) return;
 
         Minecraft mc = Minecraft.getInstance();
+
+        if (mc.level != lastLevel) {
+            lastLevel = mc.level;
+            ClientGameState.reset();
+            outsideAreaTicks = 0;
+            outsideAreaVoicePending = false;
+            return;
+        }
+
         if (mc.player == null || mc.level == null) {
             outsideAreaTicks = 0;
             outsideAreaVoicePending = false;
