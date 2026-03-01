@@ -23,7 +23,7 @@ public final class BattlefieldHudOverlay {
     private static final int RED = 0xFFFF3B30;
     private static final int WHITE = 0xFFFFFFFF;
     private static final int WARNING_TEXT = 0xFFFF5555;
-    private static final int HUD_SCORE_HIDE_TICKS = 15 * 20;
+    private static final int HUD_SCORE_HIDE_TICKS = 10 * 20;
 
     // 方向判定的“死区”，避免抖动导致方向频繁翻转
     private static final float DIR_DEADZONE = 0.0035f;
