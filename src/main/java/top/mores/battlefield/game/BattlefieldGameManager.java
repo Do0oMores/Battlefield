@@ -17,6 +17,7 @@ import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CGameStatePacket;
+import top.mores.battlefield.net.S2CSectorAreaPacket;
 import top.mores.battlefield.server.MohistTeleport;
 import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
@@ -82,6 +83,7 @@ public final class BattlefieldGameManager {
     }
 
     public static void leaveBattle(ServerPlayer player) {
+        sendClientReset(player);
         PARTICIPANTS.remove(player.getUUID());
         TeamManager.clearTeam(player);
         ScoreManager.clearPlayer(player.getUUID());
@@ -207,6 +209,7 @@ public final class BattlefieldGameManager {
     private static void finishAndReset() {
         executeResultCommands();
         forEachParticipant(sp -> {
+            sendClientReset(sp);
             teleportTo(sp, config.lobby);
             setRespawn(sp, config.lobby);
             TeamManager.clearTeam(sp);
@@ -224,6 +227,19 @@ public final class BattlefieldGameManager {
         PARTICIPANTS.clear();
         pendingEndWinner = null;
         ScoreManager.reset();
+    }
+
+    private static void sendClientReset(ServerPlayer sp) {
+        if (sp == null) return;
+
+        BattlefieldNet.sendToPlayer(sp, new S2CGameStatePacket(
+                false, (byte) 2,
+                0, 0,
+                0, 0, 0,
+                Collections.emptyList(), Collections.emptyList(), 0,
+                Collections.emptyList(), Phase.WAITING.ordinal(), "", "", 0
+        ));
+        BattlefieldNet.sendToPlayer(sp, new S2CSectorAreaPacket(0, Collections.emptyList(), Collections.emptyList()));
     }
 
     private static void ensureSession() {
