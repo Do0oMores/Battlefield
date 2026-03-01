@@ -176,7 +176,18 @@ public final class BattlefieldGameManager {
             }
         }
 
+        if (PHASE == Phase.WAITING && tickCounter % 10 == 0) {
+            sendWaitingActionbar();
+        }
+
         sendState();
+    }
+
+    private static void sendWaitingActionbar() {
+        if (config == null) return;
+        String text = "【需要 " + PARTICIPANTS.size() + "/" + config.minPlayerNumber + " 来开始对局】";
+        Component message = Component.literal(text);
+        forEachParticipant(sp -> sp.displayClientMessage(message, true));
     }
 
     private static void beginCountdown() {
