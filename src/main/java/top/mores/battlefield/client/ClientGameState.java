@@ -132,14 +132,13 @@ public final class ClientGameState {
         attackerAreas = (atk == null) ? java.util.Collections.emptyList() : new java.util.ArrayList<>(atk);
         defenderAreas = (def == null) ? java.util.Collections.emptyList() : new java.util.ArrayList<>(def);
 
-        inBattle = true;
-
         if (changed && Minecraft.getInstance().player != null) {
             VoiceManager.play(ModSounds.VOICE_SECTOR_PUSH.get());
         }
     }
 
     public static void reset() {
+        inBattle = false;
         myTeam = 2;
         attackerTickets = 0;
         defenderTickets = 0;
@@ -162,6 +161,7 @@ public final class ClientGameState {
         lastProgressById.clear();
         lastOwnerTeamById.clear();
         deltaProgressById.clear();
+        SCORE_TOASTS.clear();
     }
 
     /**
