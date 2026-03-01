@@ -412,7 +412,7 @@ public final class BattlefieldGameManager {
         return PARTICIPANTS.stream()
                 .map(level::getPlayerByUUID)
                 .filter(Objects::nonNull)
-                .filter(sp -> TeamManager.getTeam(sp) == teamId)
+                .filter(sp -> TeamManager.getTeam((ServerPlayer) sp) == teamId)
                 .count();
     }
 
