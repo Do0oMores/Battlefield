@@ -165,7 +165,7 @@ public final class ClientGameState {
     }
 
     /**
-     * 推送一条得分提示（推荐唯一入口）
+     * 推送一条得分提示
      *
      * @param amount   分值（正数）
      * @param text     描述，如 "占领"
@@ -180,7 +180,7 @@ public final class ClientGameState {
         // 更新“中心总分HUD”的显示计时
         hudLastScoreClientTick = nowTick;
 
-        // 过期清理一下（避免无限增长）
+        // 过期清理
         pruneScoreToasts(nowTick);
 
         // ===== 可选：短时间内同类合并（连击感更强） =====
@@ -189,7 +189,7 @@ public final class ClientGameState {
                 && (nowTick - last.startTick) <= HUD_TOAST_STACK_WINDOW) {
             last.amount += amount;
             last.count += 1;
-            last.startTick = nowTick; // 刷新显示时间（也可不刷新，看你想不想延长）
+            last.startTick = nowTick; // 刷新显示时间
             return;
         }
 
