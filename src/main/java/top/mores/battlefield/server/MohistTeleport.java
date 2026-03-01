@@ -13,7 +13,6 @@ public final class MohistTeleport {
 
     public static String normalizeWorldName(String worldName) {
         if (worldName == null) return null;
-        // 兼容 "minecraft:lobby" 这种写法
         int idx = worldName.indexOf(':');
         return (idx >= 0) ? worldName.substring(idx + 1) : worldName;
     }

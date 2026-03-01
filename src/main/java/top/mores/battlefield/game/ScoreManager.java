@@ -3,7 +3,6 @@ package top.mores.battlefield.game;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
-import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import top.mores.battlefield.Battlefield;
@@ -38,7 +37,9 @@ public final class ScoreManager {
 
     // ===== Toast 并行合并 =====
     private static final int TOAST_MERGE_WINDOW_TICKS = 6;   // 同 reason 6 tick 内合并
-    private static final int TOAST_FLUSH_AFTER_TICKS = 12;   // 超过 12 tick 未更新就 flush（持续射击也会定期吐）
+    private static final int TOAST_FLUSH_AFTER_TICKS = 12;
+    private static final Map<UUID, Float> PRE_HURT_HEALTH = new HashMap<>();
+    private static final Map<UUID, Long> PRE_HURT_TICK = new HashMap<>();
 
     private static final Map<UUID, EnumMap<ScoreReason, PendingToast>> PENDING_TOASTS = new HashMap<>();
 
@@ -115,13 +116,45 @@ public final class ScoreManager {
     }
 
     @SubscribeEvent
-    public static void onLivingHurt(LivingHurtEvent event) {
+    public static void onLivingDamage(net.minecraftforge.event.entity.living.LivingDamageEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
         if (!(event.getSource().getEntity() instanceof ServerPlayer attacker)) return;
         if (TeamManager.isSameTeam(attacker, victim)) return;
 
-        int rounded = Math.max(0, Math.round(event.getAmount()));
-        addScore(attacker, rounded, ScoreReason.DAMAGE);
+        long now = victim.serverLevel().getGameTime();
+        UUID vid = victim.getUUID();
+
+        // 获取玩家的快照时间和生命值，只需要在事件触发时获取一次
+        Float previousHealth = PRE_HURT_HEALTH.get(vid);
+        Long lastHurtTick = PRE_HURT_TICK.get(vid);
+
+        // 检查是否是同tick的快照，如果不是则跳过
+        if (lastHurtTick == null || lastHurtTick != now) {
+            PRE_HURT_TICK.put(vid, now);
+            PRE_HURT_HEALTH.put(vid, victim.getHealth());
+            return; // 不是同一个tick，不进行计算
+        }
+
+        // 获取实际的伤害量和玩家当前剩余生命值
+        float realDamage = event.getAmount();
+        float remainingHealth = victim.getHealth();
+
+        // 如果伤害小于等于0，直接跳过
+        if (realDamage <= 0.0f) return;
+
+        // 最后一次伤害处理：如果伤害大于玩家剩余生命，则将伤害值设置为玩家剩余生命
+        if (realDamage > remainingHealth) {
+            realDamage = remainingHealth; // 将伤害值修正为剩余生命值
+        }
+
+        // 防止任何异常导致超大
+        float maxHp = victim.getMaxHealth();
+        int realDamageScore = Math.min(Math.round(realDamage), Math.round(maxHp));
+
+        // 清理缓存并加分
+        PRE_HURT_HEALTH.remove(vid);
+        PRE_HURT_TICK.remove(vid);
+        addScore(attacker, realDamageScore, ScoreReason.DAMAGE);
     }
 
     @SubscribeEvent
