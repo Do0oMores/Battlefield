@@ -133,7 +133,7 @@ public final class ClientGameState {
         defenderAreas = (def == null) ? java.util.Collections.emptyList() : new java.util.ArrayList<>(def);
 
         if (changed && Minecraft.getInstance().player != null) {
-            VoiceManager.play(ModSounds.VOICE_SECTOR_PUSH.get());
+            VoiceManager.play(ModSounds.VOICE_ATTACK_NEXT_SECTOR.get());
         }
     }
 
