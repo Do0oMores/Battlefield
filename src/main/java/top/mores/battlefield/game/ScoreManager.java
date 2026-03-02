@@ -44,6 +44,7 @@ public final class ScoreManager {
     private static final Map<UUID, Float> PRE_HURT_REMAIN = new HashMap<>();
 
     private static final Map<UUID, EnumMap<ScoreReason, PendingToast>> PENDING_TOASTS = new HashMap<>();
+    private static final Map<UUID, Long> LAST_KILL_AWARD_TICK = new HashMap<>();
 
     private static final class PendingToast {
         int amount;
@@ -65,6 +66,7 @@ public final class ScoreManager {
         PRE_HURT_HEALTH.clear();
         PRE_HURT_TICK.clear();
         PRE_HURT_REMAIN.clear();
+        LAST_KILL_AWARD_TICK.clear();
     }
 
     public static void clearPlayer(UUID playerId) {
@@ -77,6 +79,7 @@ public final class ScoreManager {
         PRE_HURT_HEALTH.remove(playerId);
         PRE_HURT_TICK.remove(playerId);
         PRE_HURT_REMAIN.remove(playerId);
+        LAST_KILL_AWARD_TICK.remove(playerId);
     }
 
     public static int getScore(UUID playerId) {
@@ -125,8 +128,9 @@ public final class ScoreManager {
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
-        if (!(event.getSource().getEntity() instanceof ServerPlayer attacker)) return;
-        if (TeamManager.isSameTeam(attacker, victim)) return;
+        ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
+        if (attacker == null) return;
+        if (CombatRules.isFriendlyFire(attacker, victim)) return;
 
         long now = victim.serverLevel().getGameTime();
         UUID vid = victim.getUUID();
@@ -147,8 +151,9 @@ public final class ScoreManager {
     @SubscribeEvent
     public static void onLivingDamage(net.minecraftforge.event.entity.living.LivingDamageEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
-        if (!(event.getSource().getEntity() instanceof ServerPlayer attacker)) return;
-        if (TeamManager.isSameTeam(attacker, victim)) return;
+        ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
+        if (attacker == null) return;
+        if (CombatRules.isFriendlyFire(attacker, victim)) return;
 
         long now = victim.serverLevel().getGameTime();
         UUID vid = victim.getUUID();
@@ -186,8 +191,9 @@ public final class ScoreManager {
     @SubscribeEvent
     public static void onLivingDeath(LivingDeathEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
-        if (!(event.getSource().getEntity() instanceof ServerPlayer attacker)) return;
-        if (TeamManager.isSameTeam(attacker, victim)) return;
+        ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
+        if (attacker == null) return;
+        if (CombatRules.isFriendlyFire(attacker, victim)) return;
 
         onKill(attacker, victim);
     }
@@ -195,6 +201,10 @@ public final class ScoreManager {
     private static void onKill(ServerPlayer attacker, ServerPlayer victim) {
         long now = attacker.serverLevel().getGameTime();
         UUID attackerId = attacker.getUUID();
+
+        long lastAwardTick = LAST_KILL_AWARD_TICK.getOrDefault(victim.getUUID(), Long.MIN_VALUE / 4);
+        if (lastAwardTick == now) return;
+        LAST_KILL_AWARD_TICK.put(victim.getUUID(), now);
 
         // 击杀基础分（你可以按需调整）
         addScore(attacker, 100, ScoreReason.KILL);
