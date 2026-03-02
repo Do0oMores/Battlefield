@@ -15,9 +15,9 @@ import net.minecraft.world.level.block.StainedGlassBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import top.mores.battlefield.game.CombatRules;
 import top.mores.battlefield.game.ScoreManager;
 import top.mores.battlefield.team.TeamId;
-import top.mores.battlefield.team.TeamManager;
 
 import java.util.List;
 import java.util.UUID;
@@ -64,14 +64,8 @@ public final class BombEffects {
         DamageSource src = level.damageSources().explosion(null);
 
         for (ServerPlayer p : targets) {
-            // ✅ 队友免伤（但呼叫者本人照样受伤）
-            byte team = (byte) (TeamManager.getTeam(p) == TeamId.ATTACKERS ? 0 :
-                    TeamManager.getTeam(p) == TeamId.DEFENDERS ? 1 : 2);
-
-            boolean isOwner = p.getUUID().equals(ownerId);
-            boolean isTeammate = (team == ownerTeam);
-
-            if (!isOwner && isTeammate) continue;
+            TeamId owner = ownerTeam == 0 ? TeamId.ATTACKERS : ownerTeam == 1 ? TeamId.DEFENDERS : TeamId.SPECTATOR;
+            if (!CombatRules.isSelf(ownerId, p) && CombatRules.isFriendlyFire(owner, p)) continue;
 
             Vec3 eye = p.getEyePosition();
             double dist = eye.distanceTo(center);
