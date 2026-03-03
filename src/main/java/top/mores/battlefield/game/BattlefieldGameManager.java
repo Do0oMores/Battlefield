@@ -76,6 +76,7 @@ public final class BattlefieldGameManager {
     }
 
     public static void loadConfig(ServerLevel defaultLevel) {
+        if (!Battlefield.isEnabled()) return;
         Path cfgDir = FMLPaths.CONFIGDIR.get().resolve("battlefield");
         config = SectorConfigLoader.loadConfig(cfgDir);
 
@@ -94,11 +95,19 @@ public final class BattlefieldGameManager {
     }
 
     public static TeamId joinBattle(ServerPlayer player) {
+        if (!Battlefield.isEnabled()) {
+            player.sendSystemMessage(Component.literal("[BT] 功能已禁用，请联系服主检查 license。"));
+            return TeamId.SPECTATOR;
+        }
         ensureConfig(player.serverLevel());
         return joinBattle(player, config.defaultAreaName());
     }
 
     public static TeamId joinBattle(ServerPlayer player, String arenaId) {
+        if (!Battlefield.isEnabled()) {
+            player.sendSystemMessage(Component.literal("[BT] 功能已禁用，请联系服主检查 license。"));
+            return TeamId.SPECTATOR;
+        }
         ensureConfig(player.serverLevel());
 
         if (PLAYER_MATCH.containsKey(player.getUUID())) {
@@ -141,6 +150,7 @@ public final class BattlefieldGameManager {
     }
 
     public static void leaveBattle(ServerPlayer player) {
+        if (!Battlefield.isEnabled()) return;
         String arenaId = PLAYER_MATCH.get(player.getUUID());
         if (arenaId == null) {
             sendClientReset(player);
@@ -179,6 +189,7 @@ public final class BattlefieldGameManager {
 
     @SubscribeEvent
     public static void onLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+        if (!Battlefield.isEnabled()) return;
         if (event.getEntity() instanceof ServerPlayer sp && PLAYER_MATCH.containsKey(sp.getUUID())) {
             leaveBattle(sp);
         }
@@ -195,6 +206,7 @@ public final class BattlefieldGameManager {
 
     @SubscribeEvent
     public static void onPlayerDeath(LivingDeathEvent event) {
+        if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer dead)) return;
         MatchContext ctx = findContext(dead.getUUID());
         if (ctx == null || ctx.phase != Phase.RUNNING || ctx.session == null) return;
@@ -210,6 +222,7 @@ public final class BattlefieldGameManager {
 
     @SubscribeEvent
     public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
         MatchContext ctx = findContext(sp.getUUID());
         if (ctx == null) return;
@@ -224,6 +237,7 @@ public final class BattlefieldGameManager {
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent e) {
+        if (!Battlefield.isEnabled()) return;
         if (e.phase != TickEvent.Phase.END) return;
         for (MatchContext ctx : MATCHES.values()) {
             tickMatch(ctx);

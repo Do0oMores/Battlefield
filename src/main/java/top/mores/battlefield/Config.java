@@ -9,16 +9,16 @@ import net.minecraftforge.fml.event.config.ModConfigEvent;
 public class Config {
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
-    private static final ForgeConfigSpec.ConfigValue<String> SERVER_KEY = BUILDER
-            .comment("Battlefield 专用服密钥。仅 Dedicated Server 需要配置；未配置正确密钥时，专用服将拒绝启动。")
-            .define("serverKey", "PLEASE_SET_SERVER_KEY");
+    private static final ForgeConfigSpec.ConfigValue<String> LICENSE_FILE = BUILDER
+            .comment("Battlefield 离线授权文件路径（相对服务端根目录或绝对路径）。Dedicated Server 启动时会进行 Ed25519 验签。")
+            .define("licenseFile", "config/battlefield-license.json");
 
     static final ForgeConfigSpec SPEC = BUILDER.build();
 
-    public static String serverKey;
+    public static String licenseFile;
 
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
-        serverKey = SERVER_KEY.get();
+        licenseFile = LICENSE_FILE.get();
     }
 }

@@ -21,13 +21,15 @@ import top.mores.battlefield.client.ModSounds;
 import top.mores.battlefield.command.BtCommands;
 import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.net.BattlefieldNet;
-import top.mores.battlefield.server.ServerKeyValidator;
+import top.mores.battlefield.server.LicenseVerifier;
 
 @Mod(Battlefield.MODID)
 public class Battlefield {
 
     public static final String MODID = "battlefield";
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static volatile RuntimeState runtimeState = RuntimeState.ENABLED;
+    private static volatile String disableReason = "";
 
     public Battlefield() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
@@ -56,21 +58,43 @@ public class Battlefield {
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
         if (!event.getServer().isDedicatedServer()) {
-            LOGGER.info("[{}] Non-dedicated server detected, skipping server key validation.", MODID);
+            LOGGER.info("[{}] Non-dedicated server detected, skipping license verification.", MODID);
             return;
         }
 
-        if (!ServerKeyValidator.isValid(Config.serverKey)) {
-            LOGGER.error("[{}] Invalid server key. Set a valid `serverKey` in the config before starting.", MODID);
-            throw new IllegalStateException("Battlefield server key validation failed.");
+        LicenseVerifier.VerificationResult result = LicenseVerifier.verify(Config.licenseFile);
+        if (!result.valid()) {
+            disable(result.message());
+            LOGGER.error("[{}] Battlefield disabled due to invalid license: {}", MODID, result.message());
+            return;
         }
 
-        LOGGER.info("[{}] Server key validated, server starting.", MODID);
+        runtimeState = RuntimeState.ENABLED;
+        disableReason = "";
+        LOGGER.info("[{}] License verified successfully: {}", MODID, result.message());
     }
 
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
         BtCommands.register(event.getDispatcher());
+    }
+
+    public static boolean isEnabled() {
+        return runtimeState == RuntimeState.ENABLED;
+    }
+
+    public static String disableReason() {
+        return disableReason;
+    }
+
+    public static void disable(String reason) {
+        runtimeState = RuntimeState.DISABLED;
+        disableReason = reason == null ? "unknown" : reason;
+    }
+
+    private enum RuntimeState {
+        ENABLED,
+        DISABLED
     }
 
     @Mod.EventBusSubscriber(modid = MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)

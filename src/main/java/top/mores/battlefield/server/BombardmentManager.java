@@ -41,6 +41,7 @@ public final class BombardmentManager {
 
     /** 以玩家指定中心点开始轰炸（覆盖重开） */
     public static void start(ServerPlayer player, Vec3 center) {
+        if (!Battlefield.isEnabled()) return;
         ServerLevel level = player.serverLevel();
         long now = level.getGameTime();
 
@@ -51,6 +52,7 @@ public final class BombardmentManager {
     }
 
     public static void stop(ServerPlayer player) {
+        if (!Battlefield.isEnabled()) return;
         RUNNING.remove(new Key(player.serverLevel(), player.getUUID()));
     }
 
@@ -60,6 +62,7 @@ public final class BombardmentManager {
 
     @SubscribeEvent
     public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         UUID playerId = player.getUUID();
         RUNNING.keySet().removeIf(key -> key.owner().equals(playerId));
@@ -67,6 +70,7 @@ public final class BombardmentManager {
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent e) {
+        if (!Battlefield.isEnabled()) return;
         if (e.phase != TickEvent.Phase.END) return;
 
         Iterator<Key> it = RUNNING.keySet().iterator();
