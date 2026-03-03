@@ -6,9 +6,7 @@ import java.security.NoSuchAlgorithmException;
 
 public final class ServerKeyValidator {
 
-    // 这是合法密钥的 SHA-256 值（十六进制小写）。
-    // 如需更换授权密钥，请先计算新密钥的 SHA-256 并替换此值。
-    private static final String EXPECTED_KEY_SHA256 = "213438fefe67517de8ea43e893f851a6a5782bb522f611387090300102c23bb9";
+    private static final String EXPECTED_KEY_SHA256 = "933ea88ccc0777a9c3fb444bfab8f37376a1b57ee83e2c5d0d5fc4fbdf8870d7";
 
     private ServerKeyValidator() {
     }
