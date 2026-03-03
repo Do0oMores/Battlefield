@@ -14,6 +14,7 @@ import java.util.List;
 
 public class SectorManager {
     public static final int CAPTURE_INTERVAL_TICKS = 10; // 0.5s
+    public static final int SCORE_AWARD_INTERVAL_TICKS = 60; // 3s
 
     public static final int BASE_STEP = 4;   // 每 0.5s 最少推进 4
     public static final int BONUS_STEP = 2;
@@ -44,6 +45,7 @@ public class SectorManager {
 
     private void updatePoint(GameSession session, CapturePoint point) {
         ServerLevel level = session.level;
+        boolean shouldAwardScore = level.getGameTime() % SCORE_AWARD_INTERVAL_TICKS == 0;
 
         int attackers = 0;
         int defenders = 0;
@@ -65,10 +67,12 @@ public class SectorManager {
             double dx = pos.x - cx, dz = pos.z - cz;
             if (dx * dx + dz * dz > r2) continue;
 
-            if (team == point.owner) {
-                ScoreManager.addDefendScore(sp, 5);
-            } else {
-                ScoreManager.addCaptureScore(sp, 5);
+            if (shouldAwardScore) {
+                if (team == point.owner) {
+                    ScoreManager.addDefendScore(sp, 5);
+                } else {
+                    ScoreManager.addCaptureScore(sp, 5);
+                }
             }
 
             if (team == TeamId.ATTACKERS) attackers++;
