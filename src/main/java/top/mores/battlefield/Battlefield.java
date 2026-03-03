@@ -21,6 +21,7 @@ import top.mores.battlefield.client.ModSounds;
 import top.mores.battlefield.command.BtCommands;
 import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.net.BattlefieldNet;
+import top.mores.battlefield.server.ServerKeyValidator;
 
 @Mod(Battlefield.MODID)
 public class Battlefield {
@@ -54,7 +55,12 @@ public class Battlefield {
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
-        LOGGER.info("[{}] Server starting.", MODID);
+        if (!ServerKeyValidator.isValid(Config.serverKey)) {
+            LOGGER.error("[{}] Invalid server key. Set a valid `serverKey` in the config before starting.", MODID);
+            throw new IllegalStateException("Battlefield server key validation failed.");
+        }
+
+        LOGGER.info("[{}] Server key validated, server starting.", MODID);
     }
 
     @SubscribeEvent
