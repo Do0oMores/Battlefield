@@ -7,6 +7,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
@@ -53,6 +54,17 @@ public final class BombardmentManager {
         RUNNING.remove(new Key(player.serverLevel(), player.getUUID()));
     }
 
+    public static void clearAll() {
+        RUNNING.clear();
+    }
+
+    @SubscribeEvent
+    public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        UUID playerId = player.getUUID();
+        RUNNING.keySet().removeIf(key -> key.owner().equals(playerId));
+    }
+
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent e) {
         if (e.phase != TickEvent.Phase.END) return;
@@ -64,6 +76,10 @@ public final class BombardmentManager {
             if (inst == null) { it.remove(); continue; }
 
             ServerLevel level = key.level();
+            if (level.getServer() == null) {
+                it.remove();
+                continue;
+            }
             long now = level.getGameTime();
 
             if (now >= inst.endTick()) {

@@ -125,6 +125,19 @@ public final class ScoreManager {
         onKill(ownerPlayer, victimPlayer);
     }
 
+
+    @SubscribeEvent
+    public static void onLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        clearPlayer(player.getUUID());
+
+        for (Map<String, KillWindow> killWindows : STREAK_SQUAD_KILLS.values()) {
+            for (KillWindow window : killWindows.values()) {
+                window.killedVictims().remove(player.getUUID());
+            }
+        }
+    }
+
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;

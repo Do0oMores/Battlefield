@@ -15,6 +15,7 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
@@ -23,6 +24,7 @@ import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CGameStatePacket;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
 import top.mores.battlefield.server.MohistTeleport;
+import top.mores.battlefield.server.BombardmentManager;
 import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
@@ -95,6 +97,8 @@ public final class BattlefieldGameManager {
     public static void leaveBattle(ServerPlayer player) {
         sendClientReset(player);
         PARTICIPANTS.remove(player.getUUID());
+        OUTSIDE_AREA_TICKS.remove(player.getUUID());
+        BombardmentManager.stop(player);
         TeamManager.clearTeam(player);
         ScoreManager.clearPlayer(player.getUUID());
         teleportTo(player, config != null ? config.lobby : null);
@@ -116,6 +120,14 @@ public final class BattlefieldGameManager {
         if (event.getEntity() instanceof ServerPlayer sp && PARTICIPANTS.contains(sp.getUUID())) {
             leaveBattle(sp);
         }
+    }
+
+    @SubscribeEvent
+    public static void onServerStopped(ServerStoppedEvent event) {
+        resetMatch();
+        config = null;
+        battleLevel = null;
+        BombardmentManager.clearAll();
     }
 
     @SubscribeEvent
@@ -304,6 +316,7 @@ public final class BattlefieldGameManager {
         PARTICIPANTS.clear();
         pendingEndWinner = null;
         ScoreManager.reset();
+        BombardmentManager.clearAll();
     }
 
     private static void sendClientReset(ServerPlayer sp) {
