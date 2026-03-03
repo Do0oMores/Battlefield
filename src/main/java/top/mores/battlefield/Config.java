@@ -10,7 +10,7 @@ public class Config {
     private static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
 
     private static final ForgeConfigSpec.ConfigValue<String> SERVER_KEY = BUILDER
-            .comment("Battlefield 服务端密钥。未配置正确密钥时，服务端将拒绝启动。")
+            .comment("Battlefield 专用服密钥。仅 Dedicated Server 需要配置；未配置正确密钥时，专用服将拒绝启动。")
             .define("serverKey", "PLEASE_SET_SERVER_KEY");
 
     static final ForgeConfigSpec SPEC = BUILDER.build();

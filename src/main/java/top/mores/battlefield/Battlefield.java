@@ -38,7 +38,7 @@ public class Battlefield {
         ModSounds.SOUND_EVENTS.register(modEventBus);
 
         // 注册配置
-        ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, Config.SPEC);
 
         // Forge 事件
         MinecraftForge.EVENT_BUS.register(this);
@@ -55,6 +55,11 @@ public class Battlefield {
 
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
+        if (!event.getServer().isDedicatedServer()) {
+            LOGGER.info("[{}] Non-dedicated server detected, skipping server key validation.", MODID);
+            return;
+        }
+
         if (!ServerKeyValidator.isValid(Config.serverKey)) {
             LOGGER.error("[{}] Invalid server key. Set a valid `serverKey` in the config before starting.", MODID);
             throw new IllegalStateException("Battlefield server key validation failed.");
