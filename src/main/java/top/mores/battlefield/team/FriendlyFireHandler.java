@@ -14,6 +14,7 @@ public final class FriendlyFireHandler {
 
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
+        if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
         ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
         if (attacker == null) return;
