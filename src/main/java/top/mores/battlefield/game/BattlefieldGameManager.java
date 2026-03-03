@@ -83,11 +83,11 @@ public final class BattlefieldGameManager {
         for (var arena : config.arenas.values()) {
             ServerLevel level = resolveBattleLevel(defaultLevel, arena.world);
             if (level == null) continue;
-            MatchContext old = MATCHES.get(arena.areaName);
+            MatchContext old = MATCHES.get(arena.id);
             MatchContext ctx = old != null
                     ? old
-                    : new MatchContext(arena.areaName, arena, level);
-            next.put(arena.areaName, ctx);
+                    : new MatchContext(arena.id, arena, level);
+            next.put(arena.id, ctx);
         }
         MATCHES.clear();
         MATCHES.putAll(next);

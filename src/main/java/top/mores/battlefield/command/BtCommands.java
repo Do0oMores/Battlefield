@@ -18,12 +18,12 @@ public final class BtCommands {
         d.register(Commands.literal("bt")
                 .then(Commands.literal("join")
                         .executes(ctx -> join(ctx.getSource().getPlayerOrException(), null, ctx.getSource()))
-                        .then(Commands.argument("areaName", StringArgumentType.word())
+                        .then(Commands.argument("arena", StringArgumentType.word())
                                 .suggests((context, builder) -> {
                                     BattlefieldGameManager.arenaIds().forEach(builder::suggest);
                                     return builder.buildFuture();
                                 })
-                                .executes(ctx -> join(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "areaName"), ctx.getSource()))))
+                                .executes(ctx -> join(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "arena"), ctx.getSource()))))
                 .then(Commands.literal("leave")
                         .executes(ctx -> {
                             ServerPlayer p = ctx.getSource().getPlayerOrException();
