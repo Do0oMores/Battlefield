@@ -1,6 +1,7 @@
 package top.mores.battlefield.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -16,15 +17,13 @@ public final class BtCommands {
     public static void register(CommandDispatcher<CommandSourceStack> d) {
         d.register(Commands.literal("bt")
                 .then(Commands.literal("join")
-                        .executes(ctx -> {
-                            ServerPlayer p = ctx.getSource().getPlayerOrException();
-                            TeamId team = BattlefieldGameManager.joinBattle(p);
-                            if (team == TeamId.SPECTATOR) {
-                                return 0;
-                            }
-                            ctx.getSource().sendSuccess(() -> Component.literal("已加入对局，队伍=" + team.name()), false);
-                            return 1;
-                        }))
+                        .executes(ctx -> join(ctx.getSource().getPlayerOrException(), null, ctx.getSource()))
+                        .then(Commands.argument("arena", StringArgumentType.word())
+                                .suggests((context, builder) -> {
+                                    BattlefieldGameManager.arenaIds().forEach(builder::suggest);
+                                    return builder.buildFuture();
+                                })
+                                .executes(ctx -> join(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "arena"), ctx.getSource()))))
                 .then(Commands.literal("leave")
                         .executes(ctx -> {
                             ServerPlayer p = ctx.getSource().getPlayerOrException();
@@ -37,9 +36,19 @@ public final class BtCommands {
                         .executes(ctx -> {
                             ServerLevel level = ctx.getSource().getLevel();
                             int n = BattlefieldGameManager.reloadSectors(level);
-                            ctx.getSource().sendSuccess(() -> Component.literal("[BT] sectors.json 热重载完成，战线数=" + n), true);
+                            ctx.getSource().sendSuccess(() -> Component.literal("[BT] sectors.json 热重载完成，总战线数=" + n), true);
                             return 1;
                         }))
         );
+    }
+
+    private static int join(ServerPlayer player, String arenaId, CommandSourceStack source) {
+        TeamId team = arenaId == null ? BattlefieldGameManager.joinBattle(player) : BattlefieldGameManager.joinBattle(player, arenaId);
+        if (team == TeamId.SPECTATOR) {
+            return 0;
+        }
+        String arenaText = arenaId == null ? "默认" : arenaId;
+        source.sendSuccess(() -> Component.literal("已加入对局 " + arenaText + "，队伍=" + team.name()), false);
+        return 1;
     }
 }

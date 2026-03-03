@@ -1,21 +1,21 @@
 package top.mores.battlefield.game;
 
-import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.scores.Team;
-import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.level.GameType;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
-import net.minecraftforge.event.server.ServerStoppedEvent;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
@@ -23,8 +23,8 @@ import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CGameStatePacket;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
-import top.mores.battlefield.server.MohistTeleport;
 import top.mores.battlefield.server.BombardmentManager;
+import top.mores.battlefield.server.MohistTeleport;
 import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
@@ -44,105 +44,166 @@ public final class BattlefieldGameManager {
 
     public enum Phase {WAITING, COUNTDOWN, RUNNING, ENDING}
 
-    public static GameSession SESSION;
-    public static Phase PHASE = Phase.WAITING;
-    public static TeamId WINNER = TeamId.SPECTATOR;
-
-    private static int tickCounter = 0;
-    private static final SectorManager sectorManager = new SectorManager();
-    private static final Map<UUID, Integer> OUTSIDE_AREA_TICKS = new HashMap<>();
-    private static final Set<UUID> PARTICIPANTS = new HashSet<>();
-
-    private static int countdownTicks = 0;
-    private static int endingTicks = 0;
-    private static SectorConfigLoader.SectorConfig config;
-    private static ServerLevel battleLevel;
-    private static TeamId pendingEndWinner = null;
     private static final String SCOREBOARD_TEAM_ATTACKERS = "battlefield_atk";
     private static final String SCOREBOARD_TEAM_DEFENDERS = "battlefield_def";
+
+    private static final Map<String, MatchContext> MATCHES = new HashMap<>();
+    private static final Map<UUID, String> PLAYER_MATCH = new HashMap<>();
+
+    private static SectorConfigLoader.SectorConfig config;
+
+    private static final class MatchContext {
+        final String arenaId;
+        final SectorConfigLoader.ArenaConfig arena;
+        final ServerLevel battleLevel;
+        final SectorManager sectorManager = new SectorManager();
+        final Map<UUID, Integer> outsideAreaTicks = new HashMap<>();
+        final Set<UUID> participants = new HashSet<>();
+
+        GameSession session;
+        Phase phase = Phase.WAITING;
+        TeamId winner = TeamId.SPECTATOR;
+        TeamId pendingEndWinner;
+        int tickCounter = 0;
+        int countdownTicks = 0;
+        int endingTicks = 0;
+
+        MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel battleLevel) {
+            this.arenaId = arenaId;
+            this.arena = arena;
+            this.battleLevel = battleLevel;
+        }
+    }
 
     public static void loadConfig(ServerLevel defaultLevel) {
         Path cfgDir = FMLPaths.CONFIGDIR.get().resolve("battlefield");
         config = SectorConfigLoader.loadConfig(cfgDir);
-        battleLevel = resolveBattleLevel(defaultLevel, config.world);
+
+        Map<String, MatchContext> next = new HashMap<>();
+        for (var arena : config.arenas.values()) {
+            ServerLevel level = resolveBattleLevel(defaultLevel, arena.world);
+            if (level == null) continue;
+            MatchContext old = MATCHES.get(arena.id);
+            MatchContext ctx = old != null
+                    ? old
+                    : new MatchContext(arena.id, arena, level);
+            next.put(arena.id, ctx);
+        }
+        MATCHES.clear();
+        MATCHES.putAll(next);
     }
 
     public static TeamId joinBattle(ServerPlayer player) {
         ensureConfig(player.serverLevel());
-        if (PARTICIPANTS.contains(player.getUUID())) {
+        return joinBattle(player, config.defaultArenaId());
+    }
+
+    public static TeamId joinBattle(ServerPlayer player, String arenaId) {
+        ensureConfig(player.serverLevel());
+
+        if (PLAYER_MATCH.containsKey(player.getUUID())) {
             return TeamManager.getTeam(player);
         }
-        if (PARTICIPANTS.size() >= config.maxPlayerNumber) {
-            player.sendSystemMessage(Component.literal("当前对局已满"));
+
+        var arena = config.getArena(arenaId);
+        if (arena == null) {
+            player.sendSystemMessage(Component.literal("未知对局ID: " + arenaId));
             return TeamId.SPECTATOR;
         }
 
-        TeamId team = autoAssignWithLimit(player);
+        MatchContext ctx = getOrCreateMatch(player.serverLevel(), arena.id);
+        if (ctx == null) {
+            player.sendSystemMessage(Component.literal("无法创建对局: " + arena.id));
+            return TeamId.SPECTATOR;
+        }
+
+        if (ctx.participants.size() >= arena.maxPlayerNumber) {
+            player.sendSystemMessage(Component.literal("对局 " + arena.id + " 已满"));
+            return TeamId.SPECTATOR;
+        }
+
+        TeamId team = autoAssignWithLimit(ctx, player);
         if (team == TeamId.SPECTATOR) {
-            player.sendSystemMessage(Component.literal("当前对局已满"));
+            player.sendSystemMessage(Component.literal("对局 " + arena.id + " 已满"));
             return team;
         }
 
-        PARTICIPANTS.add(player.getUUID());
+        ctx.participants.add(player.getUUID());
+        PLAYER_MATCH.put(player.getUUID(), arena.id);
         SquadManager.autoAssignSquad(player);
-        teleportTo(player, config.wait);
-        setRespawn(player, config.lobby);
+        teleportTo(player, arena.wait, ctx.battleLevel);
+        setRespawn(player, arena.lobby, ctx.battleLevel);
 
-        if (PHASE == Phase.WAITING && PARTICIPANTS.size() >= config.minPlayerNumber) {
-            beginCountdown();
+        if (ctx.phase == Phase.WAITING && ctx.participants.size() >= arena.minPlayerNumber) {
+            beginCountdown(ctx);
         }
         return team;
     }
 
     public static void leaveBattle(ServerPlayer player) {
-        sendClientReset(player);
-        PARTICIPANTS.remove(player.getUUID());
-        OUTSIDE_AREA_TICKS.remove(player.getUUID());
-        BombardmentManager.stop(player);
-        TeamManager.clearTeam(player);
-        ScoreManager.clearPlayer(player.getUUID());
-        teleportTo(player, config != null ? config.lobby : null);
-        setRespawn(player, config != null ? config.lobby : null);
-
-        if (PARTICIPANTS.isEmpty()) {
-            resetMatch();
+        String arenaId = PLAYER_MATCH.get(player.getUUID());
+        if (arenaId == null) {
+            sendClientReset(player);
             return;
         }
 
-        if ((PHASE == Phase.COUNTDOWN || PHASE == Phase.WAITING) && PARTICIPANTS.size() < config.minPlayerNumber) {
-            PHASE = Phase.WAITING;
-            countdownTicks = 0;
+        MatchContext ctx = MATCHES.get(arenaId);
+        if (ctx == null) {
+            PLAYER_MATCH.remove(player.getUUID());
+            TeamManager.clearTeam(player);
+            ScoreManager.clearPlayer(player.getUUID());
+            sendClientReset(player);
+            return;
+        }
+
+        sendClientReset(player);
+        ctx.participants.remove(player.getUUID());
+        ctx.outsideAreaTicks.remove(player.getUUID());
+        PLAYER_MATCH.remove(player.getUUID());
+        BombardmentManager.stop(player);
+        TeamManager.clearTeam(player);
+        ScoreManager.clearPlayer(player.getUUID());
+        teleportTo(player, ctx.arena.lobby, ctx.battleLevel);
+        setRespawn(player, ctx.arena.lobby, ctx.battleLevel);
+
+        if (ctx.participants.isEmpty()) {
+            resetMatch(ctx);
+            return;
+        }
+
+        if ((ctx.phase == Phase.COUNTDOWN || ctx.phase == Phase.WAITING) && ctx.participants.size() < ctx.arena.minPlayerNumber) {
+            ctx.phase = Phase.WAITING;
+            ctx.countdownTicks = 0;
         }
     }
 
     @SubscribeEvent
     public static void onLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
-        if (event.getEntity() instanceof ServerPlayer sp && PARTICIPANTS.contains(sp.getUUID())) {
+        if (event.getEntity() instanceof ServerPlayer sp && PLAYER_MATCH.containsKey(sp.getUUID())) {
             leaveBattle(sp);
         }
     }
 
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
-        resetMatch();
+        MATCHES.values().forEach(BattlefieldGameManager::resetMatch);
+        MATCHES.clear();
+        PLAYER_MATCH.clear();
         config = null;
-        battleLevel = null;
         BombardmentManager.clearAll();
     }
 
     @SubscribeEvent
     public static void onPlayerDeath(LivingDeathEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer dead)) return;
-        if (PHASE != Phase.RUNNING || SESSION == null) return;
-        if (!PARTICIPANTS.contains(dead.getUUID())) return;
+        MatchContext ctx = findContext(dead.getUUID());
+        if (ctx == null || ctx.phase != Phase.RUNNING || ctx.session == null) return;
 
         TeamId team = TeamManager.getTeam(dead);
         if (team == TeamId.ATTACKERS) {
-            SESSION.attackerTickets = Math.max(0, SESSION.attackerTickets - 1);
-            if (SESSION.attackerTickets == 0) {
-                if (!isSpecialLastPointCapturing()) {
-                    pendingEndWinner = TeamId.DEFENDERS;
-                }
+            ctx.session.attackerTickets = Math.max(0, ctx.session.attackerTickets - 1);
+            if (ctx.session.attackerTickets == 0 && !isSpecialLastPointCapturing(ctx)) {
+                ctx.pendingEndWinner = TeamId.DEFENDERS;
             }
         }
     }
@@ -150,66 +211,71 @@ public final class BattlefieldGameManager {
     @SubscribeEvent
     public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
-        if (!PARTICIPANTS.contains(sp.getUUID()) || config == null) return;
+        MatchContext ctx = findContext(sp.getUUID());
+        if (ctx == null) return;
 
         TeamId team = TeamManager.getTeam(sp);
         if (team == TeamId.ATTACKERS) {
-            teleportTo(sp, config.firstAttackSpawnPoint);
+            teleportTo(sp, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
         } else if (team == TeamId.DEFENDERS) {
-            teleportTo(sp, config.firstDefendSpawnPoint);
+            teleportTo(sp, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
     }
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent e) {
         if (e.phase != TickEvent.Phase.END) return;
-        if (config == null || battleLevel == null) return;
-
-        tickCounter++;
-
-        if (PHASE == Phase.COUNTDOWN) {
-            enforceFrozenPhaseMovement();
-            countdownTicks--;
-            if (countdownTicks <= 0) {
-                startRunningMatch();
-            }
-        } else if (PHASE == Phase.ENDING) {
-            enforceFrozenPhaseMovement();
-            endingTicks--;
-            if (endingTicks <= 0) {
-                finishAndReset();
-                return;
-            }
+        for (MatchContext ctx : MATCHES.values()) {
+            tickMatch(ctx);
         }
-
-        if (PHASE == Phase.RUNNING && SESSION != null && SESSION.running) {
-            if (SESSION.getRemainingTicks() <= 0) {
-                startEnding(TeamId.DEFENDERS);
-                return;
-            }
-            enforceMovableArea();
-
-            if (tickCounter % SectorManager.CAPTURE_INTERVAL_TICKS == 0) {
-                sectorManager.tick(SESSION);
-                checkWinConditionBySector();
-            }
-
-            if (pendingEndWinner != null) {
-                startEnding(pendingEndWinner);
-                pendingEndWinner = null;
-            }
-        }
-
-        if (PHASE == Phase.WAITING && tickCounter % 10 == 0) {
-            sendWaitingActionbar();
-        }
-
-        syncNameTagTeams();
-        sendState();
     }
 
-    private static void enforceFrozenPhaseMovement() {
-        forEachParticipant(sp -> {
+    private static void tickMatch(MatchContext ctx) {
+        ctx.tickCounter++;
+
+        if (ctx.phase == Phase.COUNTDOWN) {
+            enforceFrozenPhaseMovement(ctx);
+            ctx.countdownTicks--;
+            if (ctx.countdownTicks <= 0) {
+                startRunningMatch(ctx);
+            }
+        } else if (ctx.phase == Phase.ENDING) {
+            enforceFrozenPhaseMovement(ctx);
+            ctx.endingTicks--;
+            if (ctx.endingTicks <= 0) {
+                finishAndReset(ctx);
+                return;
+            }
+        }
+
+        if (ctx.phase == Phase.RUNNING && ctx.session != null && ctx.session.running) {
+            if (ctx.session.getRemainingTicks() <= 0) {
+                startEnding(ctx, TeamId.DEFENDERS);
+                return;
+            }
+            enforceMovableArea(ctx);
+
+            if (ctx.tickCounter % SectorManager.CAPTURE_INTERVAL_TICKS == 0) {
+                ctx.sectorManager.tick(ctx.session);
+                checkWinConditionBySector(ctx);
+            }
+
+            if (ctx.pendingEndWinner != null) {
+                startEnding(ctx, ctx.pendingEndWinner);
+                ctx.pendingEndWinner = null;
+            }
+        }
+
+        if (ctx.phase == Phase.WAITING && ctx.tickCounter % 10 == 0) {
+            sendWaitingActionbar(ctx);
+        }
+
+        syncNameTagTeams(ctx);
+        sendState(ctx);
+    }
+
+    private static void enforceFrozenPhaseMovement(MatchContext ctx) {
+        forEachParticipant(ctx, sp -> {
             sp.setDeltaMovement(0, 0, 0);
             if (sp.getX() != sp.xo || sp.getY() != sp.yo || sp.getZ() != sp.zo) {
                 sp.teleportTo(sp.serverLevel(), sp.xo, sp.yo, sp.zo, sp.getYRot(), sp.getXRot());
@@ -217,16 +283,17 @@ public final class BattlefieldGameManager {
         });
     }
 
-    private static void syncNameTagTeams() {
-        if (battleLevel == null || battleLevel.getServer() == null) return;
+    private static void syncNameTagTeams(MatchContext ctx) {
+        if (ctx.battleLevel.getServer() == null) return;
 
-        Scoreboard scoreboard = battleLevel.getServer().getScoreboard();
-        PlayerTeam atkTeam = ensureNameTagTeam(scoreboard, SCOREBOARD_TEAM_ATTACKERS, Component.literal("Battlefield Attackers"));
-        PlayerTeam defTeam = ensureNameTagTeam(scoreboard, SCOREBOARD_TEAM_DEFENDERS, Component.literal("Battlefield Defenders"));
+        Scoreboard scoreboard = ctx.battleLevel.getServer().getScoreboard();
+        String suffix = "_" + ctx.arenaId;
+        PlayerTeam atkTeam = ensureNameTagTeam(scoreboard, SCOREBOARD_TEAM_ATTACKERS + suffix, Component.literal("Battlefield Attackers " + ctx.arenaId));
+        PlayerTeam defTeam = ensureNameTagTeam(scoreboard, SCOREBOARD_TEAM_DEFENDERS + suffix, Component.literal("Battlefield Defenders " + ctx.arenaId));
 
         Set<String> activeAtk = new HashSet<>();
         Set<String> activeDef = new HashSet<>();
-        forEachParticipant(sp -> {
+        forEachParticipant(ctx, sp -> {
             TeamId t = TeamManager.getTeam(sp);
             String name = sp.getScoreboardName();
             if (t == TeamId.ATTACKERS) {
@@ -262,61 +329,61 @@ public final class BattlefieldGameManager {
         }
     }
 
-    private static void sendWaitingActionbar() {
-        if (config == null) return;
-        String text = "【需要 " + PARTICIPANTS.size() + "/" + config.minPlayerNumber + " 来开始对局】";
+    private static void sendWaitingActionbar(MatchContext ctx) {
+        String text = "【对局 " + ctx.arenaId + " 需要 " + ctx.participants.size() + "/" + ctx.arena.minPlayerNumber + " 来开始】";
         Component message = Component.literal(text);
-        forEachParticipant(sp -> sp.displayClientMessage(message, true));
+        forEachParticipant(ctx, sp -> sp.displayClientMessage(message, true));
     }
 
-    private static void beginCountdown() {
-        PHASE = Phase.COUNTDOWN;
-        countdownTicks = COUNTDOWN_SECONDS * TICKS_PER_SECOND;
-        ensureSession();
-        forEachParticipant(sp -> {
-            teleportToTeamSpawn(sp, TeamManager.getTeam(sp));
-        });
+    private static void beginCountdown(MatchContext ctx) {
+        ctx.phase = Phase.COUNTDOWN;
+        ctx.countdownTicks = COUNTDOWN_SECONDS * TICKS_PER_SECOND;
+        ensureSession(ctx);
+        forEachParticipant(ctx, sp -> teleportToTeamSpawn(ctx, sp, TeamManager.getTeam(sp)));
     }
 
-    private static void startRunningMatch() {
-        PHASE = Phase.RUNNING;
-        pendingEndWinner = null;
+    private static void startRunningMatch(MatchContext ctx) {
+        ctx.phase = Phase.RUNNING;
+        ctx.pendingEndWinner = null;
     }
 
-    private static void startEnding(TeamId winner) {
-        PHASE = Phase.ENDING;
-        WINNER = winner;
-        endingTicks = ENDING_SECONDS * TICKS_PER_SECOND;
+    private static void startEnding(MatchContext ctx, TeamId winner) {
+        ctx.phase = Phase.ENDING;
+        ctx.winner = winner;
+        ctx.endingTicks = ENDING_SECONDS * TICKS_PER_SECOND;
 
-        forEachParticipant(sp -> {
+        forEachParticipant(ctx, sp -> {
             sp.getInventory().clearContent();
             sp.setGameMode(GameType.ADVENTURE);
             sp.setDeltaMovement(0, 0, 0);
         });
     }
 
-    private static void finishAndReset() {
-        executeResultCommands();
-        forEachParticipant(sp -> {
+    private static void finishAndReset(MatchContext ctx) {
+        executeResultCommands(ctx);
+        forEachParticipant(ctx, sp -> {
             sendClientReset(sp);
-            teleportTo(sp, config.lobby);
-            setRespawn(sp, config.lobby);
+            teleportTo(sp, ctx.arena.lobby, ctx.battleLevel);
+            setRespawn(sp, ctx.arena.lobby, ctx.battleLevel);
+            BombardmentManager.stop(sp);
             TeamManager.clearTeam(sp);
+            ScoreManager.clearPlayer(sp.getUUID());
+            PLAYER_MATCH.remove(sp.getUUID());
         });
-        resetMatch();
+        resetMatch(ctx);
     }
 
-    private static void resetMatch() {
-        SESSION = null;
-        PHASE = Phase.WAITING;
-        WINNER = TeamId.SPECTATOR;
-        countdownTicks = 0;
-        endingTicks = 0;
-        OUTSIDE_AREA_TICKS.clear();
-        PARTICIPANTS.clear();
-        pendingEndWinner = null;
-        ScoreManager.reset();
-        BombardmentManager.clearAll();
+    private static void resetMatch(MatchContext ctx) {
+        ctx.session = null;
+        ctx.phase = Phase.WAITING;
+        ctx.winner = TeamId.SPECTATOR;
+        ctx.countdownTicks = 0;
+        ctx.endingTicks = 0;
+        ctx.outsideAreaTicks.clear();
+        ctx.participants.forEach(ScoreManager::clearPlayer);
+        ctx.participants.forEach(PLAYER_MATCH::remove);
+        ctx.participants.clear();
+        ctx.pendingEndWinner = null;
     }
 
     private static void sendClientReset(ServerPlayer sp) {
@@ -332,34 +399,43 @@ public final class BattlefieldGameManager {
         BattlefieldNet.sendToPlayer(sp, new S2CSectorAreaPacket(0, Collections.emptyList(), Collections.emptyList()));
     }
 
-    private static void ensureSession() {
-        if (SESSION != null) return;
-        GameSession s = new GameSession(battleLevel, config.sectors, config.military, config.timeMinutes);
-        SESSION = s;
+    private static void ensureSession(MatchContext ctx) {
+        if (ctx.session != null) return;
+        GameSession s = new GameSession(ctx.battleLevel, copySectors(ctx.arena.sectors), ctx.arena.military, ctx.arena.timeMinutes);
+        ctx.session = s;
         Sector cur = s.currentSector();
         if (cur != null) {
-            BattlefieldNet.sendSectorAreas(SESSION.level, SESSION.currentSectorIndex, cur.attackerAreas, cur.defenderAreas);
+            BattlefieldNet.sendSectorAreas(ctx.session.level, ctx.session.currentSectorIndex, cur.attackerAreas, cur.defenderAreas);
         }
     }
 
-    private static void checkWinConditionBySector() {
-        if (SESSION == null) return;
+    private static List<Sector> copySectors(List<Sector> sectors) {
+        return sectors.stream().map(s -> {
+            List<CapturePoint> points = s.points.stream()
+                    .map(p -> new CapturePoint(p.id, p.x, p.y, p.z, p.radius))
+                    .toList();
+            return new Sector(s.id, points, List.copyOf(s.attackerAreas), List.copyOf(s.defenderAreas));
+        }).toList();
+    }
 
-        if (SESSION.currentSector() == null) {
-            pendingEndWinner = TeamId.ATTACKERS;
+    private static void checkWinConditionBySector(MatchContext ctx) {
+        if (ctx.session == null) return;
+
+        if (ctx.session.currentSector() == null) {
+            ctx.pendingEndWinner = TeamId.ATTACKERS;
             return;
         }
 
-        if (SESSION.attackerTickets <= 0 && !isSpecialLastPointCapturing()) {
-            pendingEndWinner = TeamId.DEFENDERS;
+        if (ctx.session.attackerTickets <= 0 && !isSpecialLastPointCapturing(ctx)) {
+            ctx.pendingEndWinner = TeamId.DEFENDERS;
         }
     }
 
-    private static boolean isSpecialLastPointCapturing() {
-        if (SESSION == null || SESSION.sectors.isEmpty()) return false;
-        if (SESSION.currentSectorIndex != SESSION.sectors.size() - 1) return false;
+    private static boolean isSpecialLastPointCapturing(MatchContext ctx) {
+        if (ctx.session == null || ctx.session.sectors.isEmpty()) return false;
+        if (ctx.session.currentSectorIndex != ctx.session.sectors.size() - 1) return false;
 
-        Sector lastSector = SESSION.currentSector();
+        Sector lastSector = ctx.session.currentSector();
         if (lastSector == null || lastSector.points.isEmpty()) return false;
         CapturePoint lastPoint = lastSector.points.get(lastSector.points.size() - 1);
 
@@ -372,38 +448,38 @@ public final class BattlefieldGameManager {
         return false;
     }
 
-    private static void sendState() {
-        if (battleLevel == null || battleLevel.getServer() == null) return;
+    private static void sendState(MatchContext ctx) {
+        if (ctx.battleLevel.getServer() == null) return;
 
-        forEachParticipant(sp -> {
+        forEachParticipant(ctx, sp -> {
             TeamId t = TeamManager.getTeam(sp);
             byte myTeam = toClientTeamCode(t);
 
-            int remain = SESSION != null ? SESSION.getRemainingTicks() : 0;
-            int atk = SESSION != null ? SESSION.attackerTickets : 0;
-            int def = SESSION != null ? SESSION.defenderTickets : 0;
-            List<S2CGameStatePacket.PointInfo> list = buildPoints();
+            int remain = ctx.session != null ? ctx.session.getRemainingTicks() : 0;
+            int atk = ctx.session != null ? ctx.session.attackerTickets : 0;
+            int def = ctx.session != null ? ctx.session.defenderTickets : 0;
+            List<S2CGameStatePacket.PointInfo> list = buildPoints(ctx);
 
             SquadSnapshot squadSnapshot = buildSquadSnapshot(sp, t);
 
             String overlayTitle = "";
             String overlaySub = "";
             int overlayTicks = 0;
-            if (PHASE == Phase.COUNTDOWN) {
-                overlayTitle = "即将开始对局";
+            if (ctx.phase == Phase.COUNTDOWN) {
+                overlayTitle = "对局 " + ctx.arenaId + " 即将开始";
                 overlaySub = "倒计时";
-                overlayTicks = countdownTicks;
-            } else if (PHASE == Phase.ENDING) {
-                overlayTitle = (WINNER == TeamId.ATTACKERS ? "进攻方" : "防守方") + "赢得了这场战斗的胜利";
-                overlaySub = participantNames(WINNER);
-                overlayTicks = endingTicks;
+                overlayTicks = ctx.countdownTicks;
+            } else if (ctx.phase == Phase.ENDING) {
+                overlayTitle = (ctx.winner == TeamId.ATTACKERS ? "进攻方" : "防守方") + "赢得了这场战斗的胜利";
+                overlaySub = participantNames(ctx, ctx.winner);
+                overlayTicks = ctx.endingTicks;
             }
 
-            var pkt = new S2CGameStatePacket(PHASE != Phase.WAITING, myTeam,
+            var pkt = new S2CGameStatePacket(ctx.phase != Phase.WAITING, myTeam,
                     atk, def,
                     remain, ScoreManager.getScore(sp.getUUID()), ScoreManager.getLastBonus(sp.getUUID(), sp.serverLevel().getGameTime()),
                     squadSnapshot.memberNames(), squadSnapshot.memberScores(), squadSnapshot.totalScore(), list,
-                    PHASE.ordinal(), overlayTitle, overlaySub, overlayTicks);
+                    ctx.phase.ordinal(), overlayTitle, overlaySub, overlayTicks);
             BattlefieldNet.sendToPlayer(sp, pkt);
         });
     }
@@ -435,10 +511,10 @@ public final class BattlefieldGameManager {
         private static final SquadSnapshot EMPTY = new SquadSnapshot(Collections.emptyList(), Collections.emptyList(), 0);
     }
 
-    private static List<S2CGameStatePacket.PointInfo> buildPoints() {
-        if (SESSION == null || SESSION.currentSector() == null) return Collections.emptyList();
+    private static List<S2CGameStatePacket.PointInfo> buildPoints(MatchContext ctx) {
+        if (ctx.session == null || ctx.session.currentSector() == null) return Collections.emptyList();
         List<S2CGameStatePacket.PointInfo> list = new ArrayList<>();
-        for (var p : SESSION.currentSector().points) {
+        for (var p : ctx.session.currentSector().points) {
             list.add(new S2CGameStatePacket.PointInfo(
                     p.id, p.x, p.y, p.z, (float) p.radius,
                     p.getProgress(),
@@ -450,32 +526,31 @@ public final class BattlefieldGameManager {
         return list;
     }
 
-    private static void executeResultCommands() {
-        if (config == null || battleLevel == null) return;
-        List<String> winnerCommands = config.winCommand;
-        List<String> loserCommands = config.loseCommand;
-        forEachParticipant(sp -> {
+    private static void executeResultCommands(MatchContext ctx) {
+        List<String> winnerCommands = ctx.arena.winCommand;
+        List<String> loserCommands = ctx.arena.loseCommand;
+        forEachParticipant(ctx, sp -> {
             TeamId t = TeamManager.getTeam(sp);
-            boolean isWinner = t == WINNER;
+            boolean isWinner = t == ctx.winner;
             List<String> list = isWinner ? winnerCommands : loserCommands;
             for (String raw : list) {
                 String cmd = raw.replace("{player}", sp.getGameProfile().getName());
-                battleLevel.getServer().getCommands().performPrefixedCommand(
-                        battleLevel.getServer().createCommandSourceStack().withSuppressedOutput(), cmd);
+                ctx.battleLevel.getServer().getCommands().performPrefixedCommand(
+                        ctx.battleLevel.getServer().createCommandSourceStack().withSuppressedOutput(), cmd);
             }
         });
     }
 
-    private static TeamId autoAssignWithLimit(ServerPlayer player) {
-        long atk = countParticipantsInTeam(player.serverLevel(), TeamId.ATTACKERS);
-        long def = countParticipantsInTeam(player.serverLevel(), TeamId.DEFENDERS);
+    private static TeamId autoAssignWithLimit(MatchContext ctx, ServerPlayer player) {
+        long atk = countParticipantsInTeam(ctx, TeamId.ATTACKERS);
+        long def = countParticipantsInTeam(ctx, TeamId.DEFENDERS);
 
         TeamId pick;
-        if (atk >= config.attackNumber && def >= config.defendNumber) {
+        if (atk >= ctx.arena.attackNumber && def >= ctx.arena.defendNumber) {
             pick = TeamId.SPECTATOR;
-        } else if (atk >= config.attackNumber) {
+        } else if (atk >= ctx.arena.attackNumber) {
             pick = TeamId.DEFENDERS;
-        } else if (def >= config.defendNumber) {
+        } else if (def >= ctx.arena.defendNumber) {
             pick = TeamId.ATTACKERS;
         } else {
             pick = atk <= def ? TeamId.ATTACKERS : TeamId.DEFENDERS;
@@ -484,9 +559,9 @@ public final class BattlefieldGameManager {
         return pick;
     }
 
-    private static long countParticipantsInTeam(ServerLevel level, TeamId teamId) {
-        return PARTICIPANTS.stream()
-                .map(level::getPlayerByUUID)
+    private static long countParticipantsInTeam(MatchContext ctx, TeamId teamId) {
+        return ctx.participants.stream()
+                .map(ctx.battleLevel::getPlayerByUUID)
                 .filter(Objects::nonNull)
                 .filter(sp -> TeamManager.getTeam((ServerPlayer) sp) == teamId)
                 .count();
@@ -498,16 +573,16 @@ public final class BattlefieldGameManager {
         return 2;
     }
 
-    private static void teleportToTeamSpawn(ServerPlayer player, TeamId teamId) {
+    private static void teleportToTeamSpawn(MatchContext ctx, ServerPlayer player, TeamId teamId) {
         if (teamId == TeamId.ATTACKERS) {
-            teleportTo(player, config.firstAttackSpawnPoint);
+            teleportTo(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
         } else if (teamId == TeamId.DEFENDERS) {
-            teleportTo(player, config.firstDefendSpawnPoint);
+            teleportTo(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
     }
 
     private static void ensureConfig(ServerLevel defaultLevel) {
-        if (config == null || battleLevel == null) {
+        if (config == null || MATCHES.isEmpty()) {
             loadConfig(defaultLevel);
         }
     }
@@ -519,7 +594,7 @@ public final class BattlefieldGameManager {
         return level != null ? level : defaultLevel;
     }
 
-    private static void teleportTo(ServerPlayer player, SectorConfigLoader.Position pos) {
+    private static void teleportTo(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel fallbackLevel) {
         if (pos == null) return;
 
         String targetWorld = pos.world();
@@ -532,51 +607,51 @@ public final class BattlefieldGameManager {
                 return;
             }
         }
-        ServerLevel level = pos.resolveLevel(player.getServer(), player.serverLevel());
+        ServerLevel level = pos.resolveLevel(player.getServer(), fallbackLevel != null ? fallbackLevel : player.serverLevel());
         player.teleportTo(level, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
     }
 
-    private static void setRespawn(ServerPlayer player, SectorConfigLoader.Position pos) {
+    private static void setRespawn(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel fallbackLevel) {
         if (pos == null) return;
-        ServerLevel level = pos.resolveLevel(player.getServer(), player.serverLevel());
+        ServerLevel level = pos.resolveLevel(player.getServer(), fallbackLevel != null ? fallbackLevel : player.serverLevel());
         player.setRespawnPosition(level.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
     }
 
-    private static void forEachParticipant(java.util.function.Consumer<ServerPlayer> action) {
-        if (battleLevel == null || battleLevel.getServer() == null) return;
-        List<ServerPlayer> players = PARTICIPANTS.stream()
-                .map(id -> battleLevel.getServer().getPlayerList().getPlayer(id))
+    private static void forEachParticipant(MatchContext ctx, java.util.function.Consumer<ServerPlayer> action) {
+        if (ctx.battleLevel.getServer() == null) return;
+        List<ServerPlayer> players = ctx.participants.stream()
+                .map(id -> ctx.battleLevel.getServer().getPlayerList().getPlayer(id))
                 .filter(Objects::nonNull)
                 .toList();
         players.forEach(action);
     }
 
-    private static String participantNames(TeamId teamId) {
-        if (battleLevel == null || battleLevel.getServer() == null) return "";
-        return PARTICIPANTS.stream()
-                .map(id -> battleLevel.getServer().getPlayerList().getPlayer(id))
+    private static String participantNames(MatchContext ctx, TeamId teamId) {
+        if (ctx.battleLevel.getServer() == null) return "";
+        return ctx.participants.stream()
+                .map(id -> ctx.battleLevel.getServer().getPlayerList().getPlayer(id))
                 .filter(Objects::nonNull)
                 .filter(sp -> TeamManager.getTeam(sp) == teamId)
                 .map(Player::getScoreboardName)
                 .collect(Collectors.joining(", "));
     }
 
-    private static void enforceMovableArea() {
-        var s = SESSION;
+    private static void enforceMovableArea(MatchContext ctx) {
+        var s = ctx.session;
         var sector = s.currentSector();
         if (sector == null) {
-            OUTSIDE_AREA_TICKS.clear();
+            ctx.outsideAreaTicks.clear();
             return;
         }
 
         for (var sp : s.level.getServer().getPlayerList().getPlayers()) {
             if (sp.serverLevel() != s.level || sp.isCreative() || sp.isSpectator()) continue;
-            if (!PARTICIPANTS.contains(sp.getUUID())) continue;
+            if (!ctx.participants.contains(sp.getUUID())) continue;
 
             TeamId t = TeamManager.getTeam(sp);
             byte myTeam = toClientTeamCode(t);
             if (myTeam != 0 && myTeam != 1) {
-                OUTSIDE_AREA_TICKS.remove(sp.getUUID());
+                ctx.outsideAreaTicks.remove(sp.getUUID());
                 continue;
             }
 
@@ -586,24 +661,48 @@ public final class BattlefieldGameManager {
             boolean inside = BattlefieldAreaRules.isInsideAreas2D(sp.getX(), sp.getZ(), myAreas);
 
             if (inside) {
-                OUTSIDE_AREA_TICKS.remove(sp.getUUID());
+                ctx.outsideAreaTicks.remove(sp.getUUID());
                 continue;
             }
 
-            int ticks = OUTSIDE_AREA_TICKS.getOrDefault(sp.getUUID(), 0) + 1;
+            int ticks = ctx.outsideAreaTicks.getOrDefault(sp.getUUID(), 0) + 1;
             if (ticks >= BattlefieldAreaRules.OUTSIDE_AREA_KILL_TICKS) {
-                OUTSIDE_AREA_TICKS.remove(sp.getUUID());
+                ctx.outsideAreaTicks.remove(sp.getUUID());
                 sp.kill();
                 continue;
             }
-            OUTSIDE_AREA_TICKS.put(sp.getUUID(), ticks);
+            ctx.outsideAreaTicks.put(sp.getUUID(), ticks);
         }
 
-        OUTSIDE_AREA_TICKS.keySet().removeIf(id -> s.level.getPlayerByUUID(id) == null);
+        ctx.outsideAreaTicks.keySet().removeIf(id -> s.level.getPlayerByUUID(id) == null);
+    }
+
+    private static MatchContext findContext(UUID playerId) {
+        String arenaId = PLAYER_MATCH.get(playerId);
+        return arenaId == null ? null : MATCHES.get(arenaId);
+    }
+
+    private static MatchContext getOrCreateMatch(ServerLevel defaultLevel, String arenaId) {
+        MatchContext existing = MATCHES.get(arenaId);
+        if (existing != null) return existing;
+
+        var arena = config.getArena(arenaId);
+        if (arena == null) return null;
+        ServerLevel level = resolveBattleLevel(defaultLevel, arena.world);
+        if (level == null) return null;
+
+        MatchContext created = new MatchContext(arena.id, arena, level);
+        MATCHES.put(arenaId, created);
+        return created;
     }
 
     public static int reloadSectors(ServerLevel level) {
         loadConfig(level);
-        return config.sectors.size();
+        return config.arenas.values().stream().mapToInt(a -> a.sectors.size()).sum();
+    }
+
+    public static Set<String> arenaIds() {
+        if (config == null) return Collections.emptySet();
+        return Collections.unmodifiableSet(config.arenas.keySet());
     }
 }
