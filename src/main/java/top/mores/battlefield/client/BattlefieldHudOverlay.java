@@ -49,7 +49,6 @@ public final class BattlefieldHudOverlay {
         }
 
         List<S2CGameStatePacket.PointInfo> pts = ClientGameState.points;
-        if (pts == null || pts.isEmpty()) return;
 
         // 顶部位置
         int topY = 6;
@@ -62,72 +61,74 @@ public final class BattlefieldHudOverlay {
         int tw = mc.font.width(topLine);
         g.drawString(mc.font, topLine, centerX - tw / 2, topY, WHITE, true);
 
-        // 菱形排布
-        int diamondsY = topY + 14;
-        int baseSize = 10;     // 菱形“半径”
-        int gap = 10;          // 点位间距
-        int count = pts.size();
-        int totalW = count * (baseSize * 2) + (count - 1) * gap;
-        int startX = centerX - totalW / 2;
+        if (pts != null && !pts.isEmpty()) {
+            // 菱形排布
+            int diamondsY = topY + 14;
+            int baseSize = 10;     // 菱形“半径”
+            int gap = 10;          // 点位间距
+            int count = pts.size();
+            int totalW = count * (baseSize * 2) + (count - 1) * gap;
+            int startX = centerX - totalW / 2;
 
-        // 玩家正在占据/争夺的点：站在点内就放大（选最近的）
-        int activeIndex = findActivePointIndex(player.position(), pts);
+            // 玩家正在占据/争夺的点：站在点内就放大（选最近的）
+            int activeIndex = findActivePointIndex(player.position(), pts);
 
-        for (int i = 0; i < count; i++) {
-            S2CGameStatePacket.PointInfo p = pts.get(i);
-            if (p == null) continue;
+            for (int i = 0; i < count; i++) {
+                S2CGameStatePacket.PointInfo p = pts.get(i);
+                if (p == null) continue;
 
-            // key 保护（可选）
-            String key = (p.id == null) ? ("#" + i) : p.id;
+                // key 保护（可选）
+                String key = (p.id == null) ? ("#" + i) : p.id;
 
-            int size = (i == activeIndex) ? (int) (baseSize * 2f) : baseSize;
+                int size = (i == activeIndex) ? (int) (baseSize * 2f) : baseSize;
 
-            int cx = startX + i * (baseSize * 2 + gap) + baseSize;
-            int cy = diamondsY + baseSize;
+                int cx = startX + i * (baseSize * 2 + gap) + baseSize;
+                int cy = diamondsY + baseSize;
 
-            // progress -> 攻方占比 0..1
-            float attackersPct = (p.progress + 100) / 200f;
-            attackersPct = Mth.clamp(attackersPct, 0f, 1f);
+                // progress -> 攻方占比 0..1
+                float attackersPct = (p.progress + 100) / 200f;
+                attackersPct = Mth.clamp(attackersPct, 0f, 1f);
 
-            // 蓝永远代表我方：我是攻方 -> 蓝=攻方占比；我是守方 -> 蓝=守方占比
-            float blueFrac = (ClientGameState.myTeam == 0) ? attackersPct : (1f - attackersPct);
-            blueFrac = Mth.clamp(blueFrac, 0f, 1f);
+                // 蓝永远代表我方：我是攻方 -> 蓝=攻方占比；我是守方 -> 蓝=守方占比
+                float blueFrac = (ClientGameState.myTeam == 0) ? attackersPct : (1f - attackersPct);
+                blueFrac = Mth.clamp(blueFrac, 0f, 1f);
 
-            // 用 blueFrac 的变化决定顺/逆时针
-            float last = LAST_BLUE_FRAC.getOrDefault(key, blueFrac);
-            float dBlue = blueFrac - last;
-            LAST_BLUE_FRAC.put(key, blueFrac);
+                // 用 blueFrac 的变化决定顺/逆时针
+                float last = LAST_BLUE_FRAC.getOrDefault(key, blueFrac);
+                float dBlue = blueFrac - last;
+                LAST_BLUE_FRAC.put(key, blueFrac);
 
-            boolean clockwise = LAST_DIR_CLOCKWISE.getOrDefault(key, true);
-            if (dBlue > DIR_DEADZONE) {
-                clockwise = true;
-            } else if (dBlue < -DIR_DEADZONE) {
-                clockwise = false;
-            }
-            LAST_DIR_CLOCKWISE.put(key, clockwise);
+                boolean clockwise = LAST_DIR_CLOCKWISE.getOrDefault(key, true);
+                if (dBlue > DIR_DEADZONE) {
+                    clockwise = true;
+                } else if (dBlue < -DIR_DEADZONE) {
+                    clockwise = false;
+                }
+                LAST_DIR_CLOCKWISE.put(key, clockwise);
 
-            // 画菱形（满蓝/满红/争夺扇形）
-            if (blueFrac >= 0.999f) {
-                LAST_BLUE_FRAC.remove(key);
-                LAST_DIR_CLOCKWISE.remove(key);
-                drawDiamondSolid(g, cx, cy, size, BLUE);
-            } else if (blueFrac <= 0.001f) {
-                LAST_BLUE_FRAC.remove(key);
-                LAST_DIR_CLOCKWISE.remove(key);
-                drawDiamondSolid(g, cx, cy, size, RED);
-            } else {
-                drawDiamondRadialFill(g, cx, cy, size, BLUE, RED, blueFrac, clockwise);
-            }
+                // 画菱形（满蓝/满红/争夺扇形）
+                if (blueFrac >= 0.999f) {
+                    LAST_BLUE_FRAC.remove(key);
+                    LAST_DIR_CLOCKWISE.remove(key);
+                    drawDiamondSolid(g, cx, cy, size, BLUE);
+                } else if (blueFrac <= 0.001f) {
+                    LAST_BLUE_FRAC.remove(key);
+                    LAST_DIR_CLOCKWISE.remove(key);
+                    drawDiamondSolid(g, cx, cy, size, RED);
+                } else {
+                    drawDiamondRadialFill(g, cx, cy, size, BLUE, RED, blueFrac, clockwise);
+                }
 
-            // 点位字母（居中）
-            String label = (p.id == null) ? "?" : p.id;
-            int lw = mc.font.width(label);
-            g.drawString(mc.font, label, cx - lw / 2, cy - 4, WHITE, true);
+                // 点位字母（居中）
+                String label = (p.id == null) ? "?" : p.id;
+                int lw = mc.font.width(label);
+                g.drawString(mc.font, label, cx - lw / 2, cy - 4, WHITE, true);
 
-            if (i == activeIndex) {
-                int blueCount = (ClientGameState.myTeam == 0) ? p.attackersIn : p.defendersIn;
-                int redCount = (ClientGameState.myTeam == 0) ? p.defendersIn : p.attackersIn;
-                drawUnderBarOnly(g, cx, cy, size, blueCount, redCount);
+                if (i == activeIndex) {
+                    int blueCount = (ClientGameState.myTeam == 0) ? p.attackersIn : p.defendersIn;
+                    int redCount = (ClientGameState.myTeam == 0) ? p.defendersIn : p.attackersIn;
+                    drawUnderBarOnly(g, cx, cy, size, blueCount, redCount);
+                }
             }
         }
 
