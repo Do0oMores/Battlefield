@@ -94,16 +94,16 @@ public final class SquadManager {
         }
     }
 
-    public static int autoAssignSquad(ServerPlayer p) {
+    public static void autoAssignSquad(ServerPlayer p) {
         TeamId team = TeamManager.getTeam(p);
-        if (team == TeamId.SPECTATOR) return 0;
+        if (team == TeamId.SPECTATOR) return;
 
         ServerLevel level = p.serverLevel();
         SquadSavedData data = SquadSavedData.get(level);
         Map<UUID, Integer> map = data.mapFor(team);
 
         int current = map.getOrDefault(p.getUUID(), 0);
-        if (current > 0) return current;
+        if (current > 0) return;
 
         List<Integer> joinable = new ArrayList<>();
         for (int i = 1; i <= TEAM_SQUAD_CAP; i++) {
@@ -117,12 +117,11 @@ public final class SquadManager {
             squad = joinable.get(RANDOM.nextInt(joinable.size()));
         } else {
             squad = firstFreeSquadId(map);
-            if (squad == 0) return 0;
+            if (squad == 0) return;
         }
 
         map.put(p.getUUID(), squad);
         data.setDirty();
-        return squad;
     }
 
     public static void resetForMatchStart(ServerLevel level) {
