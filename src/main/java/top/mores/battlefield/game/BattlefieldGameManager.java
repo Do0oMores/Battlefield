@@ -95,7 +95,7 @@ public final class BattlefieldGameManager {
 
     public static TeamId joinBattle(ServerPlayer player) {
         ensureConfig(player.serverLevel());
-        return joinBattle(player, config.defaultArenaId());
+        return joinBattle(player, config.defaultAreaName());
     }
 
     public static TeamId joinBattle(ServerPlayer player, String arenaId) {
@@ -111,25 +111,25 @@ public final class BattlefieldGameManager {
             return TeamId.SPECTATOR;
         }
 
-        MatchContext ctx = getOrCreateMatch(player.serverLevel(), arena.id);
+        MatchContext ctx = getOrCreateMatch(player.serverLevel(), arena.areaName);
         if (ctx == null) {
-            player.sendSystemMessage(Component.literal("无法创建对局: " + arena.id));
+            player.sendSystemMessage(Component.literal("无法创建对局: " + arena.areaName));
             return TeamId.SPECTATOR;
         }
 
         if (ctx.participants.size() >= arena.maxPlayerNumber) {
-            player.sendSystemMessage(Component.literal("对局 " + arena.id + " 已满"));
+            player.sendSystemMessage(Component.literal("对局 " + arena.areaName + " 已满"));
             return TeamId.SPECTATOR;
         }
 
         TeamId team = autoAssignWithLimit(ctx, player);
         if (team == TeamId.SPECTATOR) {
-            player.sendSystemMessage(Component.literal("对局 " + arena.id + " 已满"));
+            player.sendSystemMessage(Component.literal("对局 " + arena.areaName + " 已满"));
             return team;
         }
 
         ctx.participants.add(player.getUUID());
-        PLAYER_MATCH.put(player.getUUID(), arena.id);
+        PLAYER_MATCH.put(player.getUUID(), arena.areaName);
         SquadManager.autoAssignSquad(player);
         teleportTo(player, arena.wait, ctx.battleLevel);
         setRespawn(player, arena.lobby, ctx.battleLevel);
@@ -460,7 +460,7 @@ public final class BattlefieldGameManager {
             int def = ctx.session != null ? ctx.session.defenderTickets : 0;
             List<S2CGameStatePacket.PointInfo> list = buildPoints(ctx);
 
-            SquadSnapshot squadSnapshot = buildSquadSnapshot(sp, t);
+            SquadSnapshot squadSnapshot = buildSquadSnapshot(ctx, sp, t);
 
             String overlayTitle = "";
             String overlaySub = "";
@@ -484,13 +484,18 @@ public final class BattlefieldGameManager {
         });
     }
 
-    private static SquadSnapshot buildSquadSnapshot(ServerPlayer player, TeamId teamId) {
+    private static SquadSnapshot buildSquadSnapshot(MatchContext ctx, ServerPlayer player, TeamId teamId) {
         if (teamId == TeamId.SPECTATOR) {
             return SquadSnapshot.EMPTY;
         }
 
         int squadId = SquadManager.getSquad(player);
-        List<UUID> members = SquadManager.getSquadMembers(player.serverLevel(), teamId, squadId);
+        List<UUID> members = ctx.participants.stream()
+                .filter(id -> {
+                    ServerPlayer sp = player.serverLevel().getPlayerByUUID(id);
+                    return sp != null && TeamManager.getTeam(sp) == teamId && SquadManager.getSquad(sp) == squadId;
+                })
+                .collect(Collectors.toCollection(ArrayList::new));
         members.sort(Comparator.comparing(UUID::toString));
 
         List<String> memberNames = new ArrayList<>(members.size());
@@ -691,8 +696,8 @@ public final class BattlefieldGameManager {
         ServerLevel level = resolveBattleLevel(defaultLevel, arena.world);
         if (level == null) return null;
 
-        MatchContext created = new MatchContext(arena.id, arena, level);
-        MATCHES.put(arenaId, created);
+        MatchContext created = new MatchContext(arena.areaName, arena, level);
+        MATCHES.put(arena.areaName, created);
         return created;
     }
 
@@ -704,5 +709,9 @@ public final class BattlefieldGameManager {
     public static Set<String> arenaIds() {
         if (config == null) return Collections.emptySet();
         return Collections.unmodifiableSet(config.arenas.keySet());
+    }
+
+    public static String getPlayerAreaName(UUID playerId) {
+        return PLAYER_MATCH.get(playerId);
     }
 }

@@ -26,6 +26,7 @@ public final class SectorConfigLoader {
     }
 
     private static class Root {
+        String areaName;
         String world;
         Integer time;
         Integer military;
@@ -60,7 +61,7 @@ public final class SectorConfigLoader {
     }
 
     public static final class ArenaConfig {
-        public final String id;
+        public final String areaName;
         public final String world;
         public final int timeMinutes;
         public final int military;
@@ -76,11 +77,11 @@ public final class SectorConfigLoader {
         public final List<String> loseCommand;
         public final List<Sector> sectors;
 
-        public ArenaConfig(String id, String world, int timeMinutes, int military,
+        public ArenaConfig(String areaName, String world, int timeMinutes, int military,
                            int maxPlayerNumber, int attackNumber, int defendNumber, int minPlayerNumber,
                            Position wait, Position lobby, Position firstAttackSpawnPoint, Position firstDefendSpawnPoint,
                            List<String> winCommand, List<String> loseCommand, List<Sector> sectors) {
-            this.id = id;
+            this.areaName = areaName;
             this.world = world;
             this.timeMinutes = timeMinutes;
             this.military = military;
@@ -112,12 +113,13 @@ public final class SectorConfigLoader {
             return arenas.get(arenaId);
         }
 
-        public String defaultArenaId() {
+        public String defaultAreaName() {
             return arenas.keySet().stream().findFirst().orElse("default");
         }
     }
 
     private static class ArenaJson {
+        String areaName;
         String id;
         String world;
         Integer time;
@@ -187,27 +189,34 @@ public final class SectorConfigLoader {
         LinkedHashMap<String, ArenaConfig> arenas = new LinkedHashMap<>();
         if (root == null) {
             ArenaConfig arena = parseArena("default", null, null);
-            arenas.put(arena.id, arena);
+            arenas.put(arena.areaName, arena);
             return new SectorConfig(arenas);
         }
 
         if (root.arenas != null && !root.arenas.isEmpty()) {
             for (ArenaJson arenaJson : root.arenas) {
-                String id = (arenaJson != null && arenaJson.id != null && !arenaJson.id.isBlank()) ? arenaJson.id : null;
-                if (id == null || arenas.containsKey(id)) continue;
-                arenas.put(id, parseArena(id, arenaJson, root));
+                String areaName = resolveAreaName(arenaJson);
+                if (areaName == null || arenas.containsKey(areaName)) continue;
+                arenas.put(areaName, parseArena(areaName, arenaJson, root));
             }
         }
 
         if (arenas.isEmpty()) {
-            String id = "default";
-            arenas.put(id, parseArena(id, null, root));
+            String areaName = (root.areaName != null && !root.areaName.isBlank()) ? root.areaName : "default";
+            arenas.put(areaName, parseArena(areaName, null, root));
         }
 
         return new SectorConfig(arenas);
     }
 
-    private static ArenaConfig parseArena(String id, ArenaJson arena, Root rootFallback) {
+    private static String resolveAreaName(ArenaJson arena) {
+        if (arena == null) return null;
+        if (arena.areaName != null && !arena.areaName.isBlank()) return arena.areaName;
+        if (arena.id != null && !arena.id.isBlank()) return arena.id;
+        return null;
+    }
+
+    private static ArenaConfig parseArena(String areaName, ArenaJson arena, Root rootFallback) {
         String world = "minecraft:overworld";
         int timeMinutes = 20;
         int military = 300;
@@ -252,7 +261,7 @@ public final class SectorConfigLoader {
         if (sectorJson == null && rootFallback != null) sectorJson = rootFallback.sectors;
         sectors = parseSectors(sectorJson);
 
-        return new ArenaConfig(id, world, timeMinutes, military, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
+        return new ArenaConfig(areaName, world, timeMinutes, military, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
                 wait, lobby, firstAttackSpawnPoint, firstDefendSpawnPoint, winCommand, loseCommand, sectors);
     }
 
@@ -328,42 +337,44 @@ public final class SectorConfigLoader {
 
     private static void writeDefault(Path file) throws IOException {
         Root root = new Root();
-        root.world = "minecraft:world";
-        root.time = 20;
-        root.military = 300;
-        root.maxPlayerNumber = 32;
-        root.attackNumber = 16;
-        root.defendNumber = 16;
-        root.minPlayerNumber = 2;
+        root.arenas = new ArrayList<>();
+        ArenaJson arena = new ArenaJson();
+        arena.areaName = "area_alpha";
+        arena.world = "minecraft:world";
+        arena.time = 20;
+        arena.military = 300;
+        arena.maxPlayerNumber = 32;
+        arena.attackNumber = 16;
+        arena.defendNumber = 16;
+        arena.minPlayerNumber = 2;
 
-        root.wait = new PositionJson();
-        root.wait.world = "minecraft:world";
-        root.wait.x = 0.5;
-        root.wait.y = 64.0;
-        root.wait.z = 0.5;
+        arena.wait = new PositionJson();
+        arena.wait.world = "minecraft:world";
+        arena.wait.x = 0.5;
+        arena.wait.y = 64.0;
+        arena.wait.z = 0.5;
 
-        root.lobby = new PositionJson();
-        root.lobby.world = "minecraft:world";
-        root.lobby.x = 0.5;
-        root.lobby.y = 64.0;
-        root.lobby.z = 0.5;
+        arena.lobby = new PositionJson();
+        arena.lobby.world = "minecraft:world";
+        arena.lobby.x = 0.5;
+        arena.lobby.y = 64.0;
+        arena.lobby.z = 0.5;
 
-        root.firstAttackSpawnPoint = new PositionJson();
-        root.firstAttackSpawnPoint.world = "minecraft:world";
-        root.firstAttackSpawnPoint.x = 16.5;
-        root.firstAttackSpawnPoint.y = 64.0;
-        root.firstAttackSpawnPoint.z = 0.5;
+        arena.firstAttackSpawnPoint = new PositionJson();
+        arena.firstAttackSpawnPoint.world = "minecraft:world";
+        arena.firstAttackSpawnPoint.x = 16.5;
+        arena.firstAttackSpawnPoint.y = 64.0;
+        arena.firstAttackSpawnPoint.z = 0.5;
 
-        root.firstDefendSpawnPoint = new PositionJson();
-        root.firstDefendSpawnPoint.world = "minecraft:world";
-        root.firstDefendSpawnPoint.x = -16.5;
-        root.firstDefendSpawnPoint.y = 64.0;
-        root.firstDefendSpawnPoint.z = 0.5;
+        arena.firstDefendSpawnPoint = new PositionJson();
+        arena.firstDefendSpawnPoint.world = "minecraft:world";
+        arena.firstDefendSpawnPoint.x = -16.5;
+        arena.firstDefendSpawnPoint.y = 64.0;
+        arena.firstDefendSpawnPoint.z = 0.5;
 
-        root.winCommand = List.of();
-        root.loseCommand = List.of();
-
-        root.sectors = new ArrayList<>();
+        arena.winCommand = List.of();
+        arena.loseCommand = List.of();
+        arena.sectors = new ArrayList<>();
 
         SectorJson s1 = new SectorJson();
         s1.id = "sector_1";
@@ -375,7 +386,8 @@ public final class SectorConfigLoader {
         p1.z = 0.5;
         p1.radius = 6;
         s1.points.add(p1);
-        root.sectors.add(s1);
+        arena.sectors.add(s1);
+        root.arenas.add(arena);
 
         try (Writer w = Files.newBufferedWriter(file)) {
             GSON.toJson(root, w);
