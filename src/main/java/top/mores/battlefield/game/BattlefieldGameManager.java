@@ -1,8 +1,12 @@
 package top.mores.battlefield.game;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.Scoreboard;
+import net.minecraft.world.scores.Team;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
 import net.minecraftforge.event.TickEvent;
@@ -52,6 +56,8 @@ public final class BattlefieldGameManager {
     private static SectorConfigLoader.SectorConfig config;
     private static ServerLevel battleLevel;
     private static TeamId pendingEndWinner = null;
+    private static final String SCOREBOARD_TEAM_ATTACKERS = "battlefield_atk";
+    private static final String SCOREBOARD_TEAM_DEFENDERS = "battlefield_def";
 
     public static void loadConfig(ServerLevel defaultLevel) {
         Path cfgDir = FMLPaths.CONFIGDIR.get().resolve("battlefield");
@@ -150,11 +156,13 @@ public final class BattlefieldGameManager {
         tickCounter++;
 
         if (PHASE == Phase.COUNTDOWN) {
+            enforceFrozenPhaseMovement();
             countdownTicks--;
             if (countdownTicks <= 0) {
                 startRunningMatch();
             }
         } else if (PHASE == Phase.ENDING) {
+            enforceFrozenPhaseMovement();
             endingTicks--;
             if (endingTicks <= 0) {
                 finishAndReset();
@@ -184,7 +192,62 @@ public final class BattlefieldGameManager {
             sendWaitingActionbar();
         }
 
+        syncNameTagTeams();
         sendState();
+    }
+
+    private static void enforceFrozenPhaseMovement() {
+        forEachParticipant(sp -> {
+            sp.setDeltaMovement(0, 0, 0);
+            if (sp.getX() != sp.xo || sp.getY() != sp.yo || sp.getZ() != sp.zo) {
+                sp.teleportTo(sp.serverLevel(), sp.xo, sp.yo, sp.zo, sp.getYRot(), sp.getXRot());
+            }
+        });
+    }
+
+    private static void syncNameTagTeams() {
+        if (battleLevel == null || battleLevel.getServer() == null) return;
+
+        Scoreboard scoreboard = battleLevel.getServer().getScoreboard();
+        PlayerTeam atkTeam = ensureNameTagTeam(scoreboard, SCOREBOARD_TEAM_ATTACKERS, Component.literal("Battlefield Attackers"));
+        PlayerTeam defTeam = ensureNameTagTeam(scoreboard, SCOREBOARD_TEAM_DEFENDERS, Component.literal("Battlefield Defenders"));
+
+        Set<String> activeAtk = new HashSet<>();
+        Set<String> activeDef = new HashSet<>();
+        forEachParticipant(sp -> {
+            TeamId t = TeamManager.getTeam(sp);
+            String name = sp.getScoreboardName();
+            if (t == TeamId.ATTACKERS) {
+                activeAtk.add(name);
+                scoreboard.addPlayerToTeam(name, atkTeam);
+            } else if (t == TeamId.DEFENDERS) {
+                activeDef.add(name);
+                scoreboard.addPlayerToTeam(name, defTeam);
+            }
+        });
+
+        pruneTeamMembers(scoreboard, atkTeam, activeAtk);
+        pruneTeamMembers(scoreboard, defTeam, activeDef);
+    }
+
+    private static PlayerTeam ensureNameTagTeam(Scoreboard scoreboard, String teamName, Component displayName) {
+        PlayerTeam team = scoreboard.getPlayerTeam(teamName);
+        if (team == null) {
+            team = scoreboard.addPlayerTeam(teamName);
+        }
+        team.setDisplayName(displayName);
+        team.setColor(ChatFormatting.BLUE);
+        team.setNameTagVisibility(Team.Visibility.HIDE_FOR_OTHER_TEAMS);
+        return team;
+    }
+
+    private static void pruneTeamMembers(Scoreboard scoreboard, PlayerTeam team, Set<String> actives) {
+        Set<String> members = new HashSet<>(team.getPlayers());
+        for (String member : members) {
+            if (!actives.contains(member)) {
+                scoreboard.removePlayerFromTeam(member, team);
+            }
+        }
     }
 
     private static void sendWaitingActionbar() {
