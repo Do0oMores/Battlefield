@@ -83,11 +83,11 @@ public final class BattlefieldGameManager {
         for (var arena : config.arenas.values()) {
             ServerLevel level = resolveBattleLevel(defaultLevel, arena.world);
             if (level == null) continue;
-            MatchContext old = MATCHES.get(arena.id);
+            MatchContext old = MATCHES.get(arena.areaName);
             MatchContext ctx = old != null
                     ? old
-                    : new MatchContext(arena.id, arena, level);
-            next.put(arena.id, ctx);
+                    : new MatchContext(arena.areaName, arena, level);
+            next.put(arena.areaName, ctx);
         }
         MATCHES.clear();
         MATCHES.putAll(next);
@@ -492,7 +492,7 @@ public final class BattlefieldGameManager {
         int squadId = SquadManager.getSquad(player);
         List<UUID> members = ctx.participants.stream()
                 .filter(id -> {
-                    ServerPlayer sp = player.serverLevel().getPlayerByUUID(id);
+                    ServerPlayer sp = (ServerPlayer) player.serverLevel().getPlayerByUUID(id);
                     return sp != null && TeamManager.getTeam(sp) == teamId && SquadManager.getSquad(sp) == squadId;
                 })
                 .collect(Collectors.toCollection(ArrayList::new));
