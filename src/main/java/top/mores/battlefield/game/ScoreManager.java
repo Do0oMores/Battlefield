@@ -104,6 +104,7 @@ public final class ScoreManager {
     }
 
     public static void onBombDamage(ServerLevel level, UUID owner, UUID victim, float damage) {
+        if (!Battlefield.isEnabled()) return;
         if (damage <= 0) return;
         if (owner.equals(victim)) return;
 
@@ -117,6 +118,7 @@ public final class ScoreManager {
     }
 
     public static void onBombKill(ServerLevel level, UUID owner, UUID victim) {
+        if (!Battlefield.isEnabled()) return;
         ServerPlayer ownerPlayer = level.getServer().getPlayerList().getPlayer(owner);
         ServerPlayer victimPlayer = level.getServer().getPlayerList().getPlayer(victim);
         if (ownerPlayer == null || victimPlayer == null) return;
@@ -128,6 +130,7 @@ public final class ScoreManager {
 
     @SubscribeEvent
     public static void onLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+        if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         clearPlayer(player.getUUID());
 
@@ -140,6 +143,7 @@ public final class ScoreManager {
 
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
+        if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
         ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
         if (attacker == null) return;
@@ -163,6 +167,7 @@ public final class ScoreManager {
 
     @SubscribeEvent
     public static void onLivingDamage(net.minecraftforge.event.entity.living.LivingDamageEvent event) {
+        if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
         ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
         if (attacker == null) return;
@@ -203,6 +208,7 @@ public final class ScoreManager {
 
     @SubscribeEvent
     public static void onLivingDeath(LivingDeathEvent event) {
+        if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
         ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
         if (attacker == null) return;
