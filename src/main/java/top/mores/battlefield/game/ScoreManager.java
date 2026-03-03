@@ -234,7 +234,11 @@ public final class ScoreManager {
         int victimSquad = SquadManager.getSquad(victim);
         if (victimTeam == TeamId.SPECTATOR || victimSquad <= 0) return;
 
-        String key = victimTeam.name() + "-" + victimSquad;
+        String areaName = BattlefieldGameManager.getPlayerAreaName(victim.getUUID());
+        if (areaName == null || areaName.isBlank()) {
+            areaName = "default";
+        }
+        String key = areaName + "-" + victimTeam.name() + "-" + victimSquad;
         Map<String, KillWindow> map = STREAK_SQUAD_KILLS.computeIfAbsent(attackerId, k -> new HashMap<>());
         KillWindow win = map.computeIfAbsent(key, k -> new KillWindow(new HashSet<>()));
         win.killedVictims().add(victim.getUUID());
