@@ -13,6 +13,7 @@ public class GameSession {
     public int currentSectorIndex = 0;
 
     public int attackerTickets = 300;
+    public int addMilitary = 0;
     public int defenderTickets = 0;
     public long startGameTick = 0;
     public int matchDurationTicks = DEFAULT_MATCH_DURATION_TICKS;
@@ -36,10 +37,11 @@ public class GameSession {
         return level;
     }
 
-    public GameSession(ServerLevel serverLevel, List<Sector> sectors, int attackerTickets, int matchMinutes) {
+    public GameSession(ServerLevel serverLevel, List<Sector> sectors, int attackerTickets, int addMilitary, int matchMinutes) {
         this.level = serverLevel;
         this.sectors = sectors;
         this.attackerTickets = Math.max(1, attackerTickets);
+        this.addMilitary = Math.max(0, addMilitary);
         this.matchDurationTicks = Math.max(1, matchMinutes) * 60 * 20;
         this.startGameTick = serverLevel.getGameTime();
     }

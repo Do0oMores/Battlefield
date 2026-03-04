@@ -30,6 +30,7 @@ public final class SectorConfigLoader {
         String world;
         Integer time;
         Integer military;
+        Integer addMilitary;
         Integer maxPlayerNumber;
         Integer attackNumber;
         Integer defendNumber;
@@ -65,6 +66,7 @@ public final class SectorConfigLoader {
         public final String world;
         public final int timeMinutes;
         public final int military;
+        public final int addMilitary;
         public final int maxPlayerNumber;
         public final int attackNumber;
         public final int defendNumber;
@@ -77,7 +79,7 @@ public final class SectorConfigLoader {
         public final List<String> loseCommand;
         public final List<Sector> sectors;
 
-        public ArenaConfig(String areaName, String world, int timeMinutes, int military,
+        public ArenaConfig(String areaName, String world, int timeMinutes, int military, int addMilitary,
                            int maxPlayerNumber, int attackNumber, int defendNumber, int minPlayerNumber,
                            Position wait, Position lobby, Position firstAttackSpawnPoint, Position firstDefendSpawnPoint,
                            List<String> winCommand, List<String> loseCommand, List<Sector> sectors) {
@@ -85,6 +87,7 @@ public final class SectorConfigLoader {
             this.world = world;
             this.timeMinutes = timeMinutes;
             this.military = military;
+            this.addMilitary = addMilitary;
             this.maxPlayerNumber = maxPlayerNumber;
             this.attackNumber = attackNumber;
             this.defendNumber = defendNumber;
@@ -124,6 +127,7 @@ public final class SectorConfigLoader {
         String world;
         Integer time;
         Integer military;
+        Integer addMilitary;
         Integer maxPlayerNumber;
         Integer attackNumber;
         Integer defendNumber;
@@ -221,6 +225,7 @@ public final class SectorConfigLoader {
         String world = "minecraft:overworld";
         int timeMinutes = 20;
         int military = 300;
+        int addMilitary = 0;
         int maxPlayerNumber = 32;
         int attackNumber;
         int defendNumber;
@@ -237,6 +242,7 @@ public final class SectorConfigLoader {
         world = read(arena == null ? null : arena.world, rootFallback == null ? null : rootFallback.world, world);
         timeMinutes = readPositive(arena == null ? null : arena.time, rootFallback == null ? null : rootFallback.time, timeMinutes);
         military = readPositive(arena == null ? null : arena.military, rootFallback == null ? null : rootFallback.military, military);
+        addMilitary = readNonNegative(arena == null ? null : arena.addMilitary, rootFallback == null ? null : rootFallback.addMilitary, addMilitary);
         maxPlayerNumber = readPositive(arena == null ? null : arena.maxPlayerNumber, rootFallback == null ? null : rootFallback.maxPlayerNumber, maxPlayerNumber);
         minPlayerNumber = Math.max(2, readPositive(arena == null ? null : arena.minPlayerNumber, rootFallback == null ? null : rootFallback.minPlayerNumber, minPlayerNumber));
 
@@ -262,7 +268,7 @@ public final class SectorConfigLoader {
         if (sectorJson == null && rootFallback != null) sectorJson = rootFallback.sectors;
         sectors = parseSectors(sectorJson);
 
-        return new ArenaConfig(areaName, world, timeMinutes, military, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
+        return new ArenaConfig(areaName, world, timeMinutes, military, addMilitary, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
                 wait, lobby, firstAttackSpawnPoint, firstDefendSpawnPoint, winCommand, loseCommand, sectors);
     }
 
@@ -275,6 +281,12 @@ public final class SectorConfigLoader {
     private static int readPositive(Integer preferred, Integer fallback, int def) {
         if (preferred != null && preferred > 0) return preferred;
         if (fallback != null && fallback > 0) return fallback;
+        return def;
+    }
+
+    private static int readNonNegative(Integer preferred, Integer fallback, int def) {
+        if (preferred != null && preferred >= 0) return preferred;
+        if (fallback != null && fallback >= 0) return fallback;
         return def;
     }
 
@@ -344,6 +356,7 @@ public final class SectorConfigLoader {
         arena.world = "minecraft:world";
         arena.time = 20;
         arena.military = 300;
+        arena.addMilitary = 100;
         arena.maxPlayerNumber = 32;
         arena.attackNumber = 16;
         arena.defendNumber = 16;
