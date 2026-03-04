@@ -7,7 +7,6 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.team.TeamId;
 
@@ -16,15 +15,6 @@ public final class BtCommands {
     }
 
     public static void register(CommandDispatcher<CommandSourceStack> d) {
-        if (!Battlefield.isEnabled()) {
-            d.register(Commands.literal("bt")
-                    .executes(ctx -> {
-                        ctx.getSource().sendFailure(Component.literal("[BT] 功能已禁用，请检查 license：" + Battlefield.disableReason()));
-                        return 0;
-                    }));
-            return;
-        }
-
         d.register(Commands.literal("bt")
                 .then(Commands.literal("join")
                         .executes(ctx -> join(ctx.getSource().getPlayerOrException(), null, ctx.getSource()))
@@ -53,11 +43,6 @@ public final class BtCommands {
     }
 
     private static int join(ServerPlayer player, String arenaId, CommandSourceStack source) {
-        if (!Battlefield.isEnabled()) {
-            source.sendFailure(Component.literal("[BT] 功能已禁用，请检查 license：" + Battlefield.disableReason()));
-            return 0;
-        }
-
         TeamId team = arenaId == null ? BattlefieldGameManager.joinBattle(player) : BattlefieldGameManager.joinBattle(player, arenaId);
         if (team == TeamId.SPECTATOR) {
             return 0;

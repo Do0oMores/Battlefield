@@ -76,7 +76,6 @@ public final class BattlefieldGameManager {
     }
 
     public static void loadConfig(ServerLevel defaultLevel) {
-        if (!Battlefield.isEnabled()) return;
         Path cfgDir = FMLPaths.CONFIGDIR.get().resolve("battlefield");
         config = SectorConfigLoader.loadConfig(cfgDir);
 
@@ -95,19 +94,11 @@ public final class BattlefieldGameManager {
     }
 
     public static TeamId joinBattle(ServerPlayer player) {
-        if (!Battlefield.isEnabled()) {
-            player.sendSystemMessage(Component.literal("[BT] 功能已禁用，请联系服主检查 license。"));
-            return TeamId.SPECTATOR;
-        }
         ensureConfig(player.serverLevel());
         return joinBattle(player, config.defaultAreaName());
     }
 
     public static TeamId joinBattle(ServerPlayer player, String arenaId) {
-        if (!Battlefield.isEnabled()) {
-            player.sendSystemMessage(Component.literal("[BT] 功能已禁用，请联系服主检查 license。"));
-            return TeamId.SPECTATOR;
-        }
         ensureConfig(player.serverLevel());
 
         if (PLAYER_MATCH.containsKey(player.getUUID())) {
@@ -150,7 +141,6 @@ public final class BattlefieldGameManager {
     }
 
     public static void leaveBattle(ServerPlayer player) {
-        if (!Battlefield.isEnabled()) return;
         String arenaId = PLAYER_MATCH.get(player.getUUID());
         if (arenaId == null) {
             sendClientReset(player);
