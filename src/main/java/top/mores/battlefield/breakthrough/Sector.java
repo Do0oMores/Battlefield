@@ -6,15 +6,15 @@ public class Sector {
     public final String id; // "S1"
     public final List<CapturePoint> points;
 
-    public final List<AreaCircle> attackerAreas;
-    public final List<AreaCircle> defenderAreas;
+    public final List<AreaRect> attackerAreas;
+    public final List<AreaRect> defenderAreas;
 
-    public record AreaCircle(double x, double z, double r) {}
+    public record AreaRect(double x1, double z1, double x2, double z2) {}
 
     public Sector(String id,
                   List<CapturePoint> points,
-                  List<AreaCircle> attackerAreas,
-                  List<AreaCircle> defenderAreas) {
+                  List<AreaRect> attackerAreas,
+                  List<AreaRect> defenderAreas) {
         this.id = id;
         this.points = points;
         this.attackerAreas = attackerAreas;

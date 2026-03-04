@@ -145,7 +145,8 @@ public final class SectorConfigLoader {
     }
 
     private static class AreaJson {
-        double x, z, r;
+        double x, z;
+        Double x2, z2;
     }
 
     private static class PointJson {
@@ -297,19 +298,19 @@ public final class SectorConfigLoader {
                 points.add(cp);
             }
 
-            List<Sector.AreaCircle> atkAreas = new ArrayList<>();
+            List<Sector.AreaRect> atkAreas = new ArrayList<>();
             if (s.attackerAreas != null) {
                 for (AreaJson a : s.attackerAreas) {
-                    if (a == null || a.r <= 0) continue;
-                    atkAreas.add(new Sector.AreaCircle(a.x, a.z, a.r));
+                    if (a == null || a.x2 == null || a.z2 == null) continue;
+                    atkAreas.add(new Sector.AreaRect(a.x, a.z, a.x2, a.z2));
                 }
             }
 
-            List<Sector.AreaCircle> defAreas = new ArrayList<>();
+            List<Sector.AreaRect> defAreas = new ArrayList<>();
             if (s.defenderAreas != null) {
                 for (AreaJson a : s.defenderAreas) {
-                    if (a == null || a.r <= 0) continue;
-                    defAreas.add(new Sector.AreaCircle(a.x, a.z, a.r));
+                    if (a == null || a.x2 == null || a.z2 == null) continue;
+                    defAreas.add(new Sector.AreaRect(a.x, a.z, a.x2, a.z2));
                 }
             }
 

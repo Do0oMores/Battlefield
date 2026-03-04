@@ -73,13 +73,12 @@ public final class BattlefieldAreaRenderer {
             }
         }
 
-        // ② 固定可活动区域白圈（只画一次，不依赖 points）
+        // ② 固定可活动区域白框（只画一次，不依赖 points）
         var myAreas = (myTeam == 0) ? ClientGameState.attackerAreas : ClientGameState.defenderAreas;
         if (myAreas != null && !myAreas.isEmpty()) {
             for (var c : myAreas) {
-                if (c == null || c.r <= 0) continue;
-                drawGroundCircle(poseStack, lines, c.x, drawY, c.z,
-                        c.r,
+                if (c == null) continue;
+                drawGroundRect(poseStack, lines, c.x1, c.z1, c.x2, c.z2, drawY,
                         1.0f, 1.0f, 1.0f, 0.9f);
             }
         }
@@ -170,6 +169,24 @@ public final class BattlefieldAreaRenderer {
 
             addLine(vc, m4, m3, x0, (float) y, z0, x1, (float) y, z1, r, g, b, a);
         }
+    }
+
+    private static void drawGroundRect(PoseStack poseStack, VertexConsumer vc,
+                                       double x1, double z1, double x2, double z2, double y,
+                                       float r, float g, float b, float a) {
+        double minX = Math.min(x1, x2);
+        double maxX = Math.max(x1, x2);
+        double minZ = Math.min(z1, z2);
+        double maxZ = Math.max(z1, z2);
+
+        PoseStack.Pose pose = poseStack.last();
+        Matrix4f m4 = pose.pose();
+        Matrix3f m3 = pose.normal();
+
+        addLine(vc, m4, m3, (float) minX, (float) y, (float) minZ, (float) maxX, (float) y, (float) minZ, r, g, b, a);
+        addLine(vc, m4, m3, (float) maxX, (float) y, (float) minZ, (float) maxX, (float) y, (float) maxZ, r, g, b, a);
+        addLine(vc, m4, m3, (float) maxX, (float) y, (float) maxZ, (float) minX, (float) y, (float) maxZ, r, g, b, a);
+        addLine(vc, m4, m3, (float) minX, (float) y, (float) maxZ, (float) minX, (float) y, (float) minZ, r, g, b, a);
     }
 
     private static void addLine(VertexConsumer vc, Matrix4f m4, Matrix3f m3,

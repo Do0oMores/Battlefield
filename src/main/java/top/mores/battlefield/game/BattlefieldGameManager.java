@@ -663,7 +663,7 @@ public final class BattlefieldGameManager {
                 continue;
             }
 
-            List<Sector.AreaCircle> myAreas =
+            List<Sector.AreaRect> myAreas =
                     (myTeam == 0) ? sector.attackerAreas : sector.defenderAreas;
 
             boolean inside = BattlefieldAreaRules.isInsideAreas2D(sp.getX(), sp.getZ(), myAreas);

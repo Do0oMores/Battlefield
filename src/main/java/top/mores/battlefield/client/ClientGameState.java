@@ -44,9 +44,9 @@ public final class ClientGameState {
     public static final int HUD_TOAST_MAX_LINES = 5;   // 最多显示几行
     public static final int HUD_TOAST_STACK_WINDOW = 14; // N tick 内同类合并
 
-    // 2D 可活动区域（固定圈）
-    public static List<S2CSectorAreaPacket.AreaCircle> attackerAreas = Collections.emptyList();
-    public static List<S2CSectorAreaPacket.AreaCircle> defenderAreas = Collections.emptyList();
+    // 2D 可活动区域（矩形）
+    public static List<S2CSectorAreaPacket.AreaRect> attackerAreas = Collections.emptyList();
+    public static List<S2CSectorAreaPacket.AreaRect> defenderAreas = Collections.emptyList();
     public static final java.util.ArrayDeque<ScoreToast> SCORE_TOASTS = new java.util.ArrayDeque<>();
 
     public static final class ScoreToast {
@@ -123,8 +123,8 @@ public final class ClientGameState {
     }
 
     public static void updateAreas(int newSectorIndex,
-                                   List<S2CSectorAreaPacket.AreaCircle> atk,
-                                   List<S2CSectorAreaPacket.AreaCircle> def) {
+                                   List<S2CSectorAreaPacket.AreaRect> atk,
+                                   List<S2CSectorAreaPacket.AreaRect> def) {
 
         boolean changed = (newSectorIndex != sectorIndex);
         sectorIndex = newSectorIndex;

@@ -68,9 +68,9 @@ public final class BattlefieldNet {
     }
 
     public static void sendSectorAreas(ServerLevel level, int sectorIndex,
-                                       List<Sector.AreaCircle> atk, List<Sector.AreaCircle> def) {
-        var atk2 = atk.stream().map(c -> new S2CSectorAreaPacket.AreaCircle(c.x(), c.z(), c.r())).toList();
-        var def2 = def.stream().map(c -> new S2CSectorAreaPacket.AreaCircle(c.x(), c.z(), c.r())).toList();
+                                       List<Sector.AreaRect> atk, List<Sector.AreaRect> def) {
+        var atk2 = atk.stream().map(c -> new S2CSectorAreaPacket.AreaRect(c.x1(), c.z1(), c.x2(), c.z2())).toList();
+        var def2 = def.stream().map(c -> new S2CSectorAreaPacket.AreaRect(c.x1(), c.z1(), c.x2(), c.z2())).toList();
         sendToAllInLevel(level, new S2CSectorAreaPacket(sectorIndex, atk2, def2));
     }
 }
