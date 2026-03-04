@@ -1,5 +1,6 @@
 package top.mores.battlefield.game;
 
+import com.tacz.guns.api.event.common.EntityHurtByGunEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
@@ -23,11 +24,13 @@ public final class ScoreManager {
     private static final int STREAK_WINDOW_TICKS = 15 * 20;
     private static final int STREAK_KILL_BONUS = 50;
     private static final int SQUAD_WIPE_BONUS = 200;
+    private static final int HEADSHOT_KILL_BONUS=25;
 
     // ===== 分数与旧HUD兼容字段 =====
     private static final Map<UUID, Integer> SCORES = new HashMap<>();
     private static final Map<UUID, Integer> LAST_BONUS = new HashMap<>();
     private static final Map<UUID, Long> LAST_BONUS_TICK = new HashMap<>();
+    private static final Map<UUID, Long> HEADSHOT_TICK = new HashMap<>();
 
     // ===== 连杀/团灭判定 =====
     private static final Map<UUID, Long> LAST_KILL_TICK = new HashMap<>();
@@ -67,6 +70,7 @@ public final class ScoreManager {
         PRE_HURT_TICK.clear();
         PRE_HURT_REMAIN.clear();
         LAST_KILL_AWARD_TICK.clear();
+        HEADSHOT_TICK.clear();
     }
 
     public static void clearPlayer(UUID playerId) {
@@ -80,6 +84,7 @@ public final class ScoreManager {
         PRE_HURT_TICK.remove(playerId);
         PRE_HURT_REMAIN.remove(playerId);
         LAST_KILL_AWARD_TICK.remove(playerId);
+        HEADSHOT_TICK.remove(playerId);
     }
 
     public static int getScore(UUID playerId) {
@@ -139,6 +144,16 @@ public final class ScoreManager {
                 window.killedVictims().remove(player.getUUID());
             }
         }
+    }
+
+    @SubscribeEvent
+    public static void onTaczHurt(EntityHurtByGunEvent.Post event){
+        if (!Battlefield.isEnabled()) return;
+        if (!event.isHeadShot()) return;
+        if (!(event.getHurtEntity() instanceof ServerPlayer victim)) return;
+
+        long now=victim.serverLevel().getGameTime();
+        HEADSHOT_TICK.put(victim.getUUID(),now);
     }
 
     @SubscribeEvent
@@ -213,7 +228,12 @@ public final class ScoreManager {
         ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
         if (attacker == null) return;
         if (CombatRules.isFriendlyFire(attacker, victim)) return;
-
+        long now=victim.serverLevel().getGameTime();
+        Long hsTick=HEADSHOT_TICK.get(victim.getUUID());
+        if (hsTick!=null&&hsTick==now){
+            addScore(attacker,HEADSHOT_KILL_BONUS,ScoreReason.HEADSHOT);
+            HEADSHOT_TICK.remove(victim.getUUID());
+        }
         onKill(attacker, victim);
     }
 
