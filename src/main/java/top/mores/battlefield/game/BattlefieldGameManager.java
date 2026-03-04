@@ -406,7 +406,7 @@ public final class BattlefieldGameManager {
 
     private static void ensureSession(MatchContext ctx) {
         if (ctx.session != null) return;
-        GameSession s = new GameSession(ctx.battleLevel, copySectors(ctx.arena.sectors), ctx.arena.military, ctx.arena.timeMinutes);
+        GameSession s = new GameSession(ctx.battleLevel, copySectors(ctx.arena.sectors), ctx.arena.military, ctx.arena.addMilitary, ctx.arena.timeMinutes);
         ctx.session = s;
         Sector cur = s.currentSector();
         if (cur != null) {

@@ -34,6 +34,12 @@ public class SectorManager {
         }
 
         if (sector.isClearedByAttackers()) {
+            boolean hasNextSector = session.currentSectorIndex + 1 < session.sectors.size();
+            if (hasNextSector && session.addMilitary > 0) {
+                session.attackerTickets += session.addMilitary;
+                broadcast(session.level, "攻方占领防区，兵力补充 +" + session.addMilitary + "！");
+            }
+
             session.currentSectorIndex++;
             broadcast(session.level, "攻方推进至下一战线！当前Index=" + session.currentSectorIndex);
             Sector next = session.currentSector();
