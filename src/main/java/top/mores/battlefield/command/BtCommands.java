@@ -36,7 +36,8 @@ public final class BtCommands {
                         .executes(ctx -> {
                             ServerLevel level = ctx.getSource().getLevel();
                             int n = BattlefieldGameManager.reloadSectors(level);
-                            ctx.getSource().sendSuccess(() -> Component.literal("[BT] sectors.json 热重载完成，总战线数=" + n), true);
+                            int arenas = BattlefieldGameManager.arenaCount();
+                            ctx.getSource().sendSuccess(() -> Component.literal("[BT] 配置热重载完成，对局数=" + arenas + "，总战线数=" + n), true);
                             return 1;
                         }))
         );

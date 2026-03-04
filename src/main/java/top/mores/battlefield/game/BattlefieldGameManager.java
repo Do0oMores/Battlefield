@@ -54,8 +54,8 @@ public final class BattlefieldGameManager {
 
     private static final class MatchContext {
         final String arenaId;
-        final SectorConfigLoader.ArenaConfig arena;
-        final ServerLevel battleLevel;
+        SectorConfigLoader.ArenaConfig arena;
+        ServerLevel battleLevel;
         final SectorManager sectorManager = new SectorManager();
         final Map<UUID, Integer> outsideAreaTicks = new HashMap<>();
         final Set<UUID> participants = new HashSet<>();
@@ -87,10 +87,23 @@ public final class BattlefieldGameManager {
             MatchContext ctx = old != null
                     ? old
                     : new MatchContext(arena.areaName, arena, level);
+            ctx.arena = arena;
+            ctx.battleLevel = level;
+            syncSessionWithConfig(ctx);
             next.put(arena.areaName, ctx);
         }
         MATCHES.clear();
         MATCHES.putAll(next);
+    }
+
+    private static void syncSessionWithConfig(MatchContext ctx) {
+        if (ctx.session == null) return;
+        ctx.session.setSectors(copySectors(ctx.arena.sectors));
+        ctx.session.addMilitary = Math.max(0, ctx.arena.addMilitary);
+
+        int nextDurationTicks = Math.max(1, ctx.arena.timeMinutes) * 60 * 20;
+        int passedTicks = (int) Math.max(0L, ctx.battleLevel.getGameTime() - ctx.session.startGameTick);
+        ctx.session.matchDurationTicks = Math.max(nextDurationTicks, passedTicks + 1);
     }
 
     public static TeamId joinBattle(ServerPlayer player) {
@@ -707,6 +720,11 @@ public final class BattlefieldGameManager {
     public static int reloadSectors(ServerLevel level) {
         loadConfig(level);
         return config.arenas.values().stream().mapToInt(a -> a.sectors.size()).sum();
+    }
+
+    public static int arenaCount() {
+        if (config == null) return 0;
+        return config.arenas.size();
     }
 
     public static Set<String> arenaIds() {
