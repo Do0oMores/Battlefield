@@ -28,16 +28,13 @@ public final class BattlefieldAreaRules {
     }
 
     public static boolean isInsideMovableArea(byte myTeam, double x, double z) {
-        List<top.mores.battlefield.net.S2CSectorAreaPacket.AreaCircle> circles =
+        List<top.mores.battlefield.net.S2CSectorAreaPacket.AreaRect> rects =
                 (myTeam == 0) ? ClientGameState.attackerAreas :
                         (myTeam == 1) ? ClientGameState.defenderAreas :
                                 java.util.Collections.emptyList();
 
-        for (var c : circles) {
-            double dx = x - c.x;
-            double dz = z - c.z;
-            double r = c.r;
-            if (dx * dx + dz * dz <= r * r) return true;
+        for (var rect : rects) {
+            if (isInsideRect(x, z, rect.x1, rect.z1, rect.x2, rect.z2)) return true;
         }
         return false;
     }
@@ -53,14 +50,19 @@ public final class BattlefieldAreaRules {
         return false;
     }
 
-    public static boolean isInsideAreas2D(double x, double z, List<Sector.AreaCircle> areas) {
+    public static boolean isInsideAreas2D(double x, double z, List<Sector.AreaRect> areas) {
         if (areas == null || areas.isEmpty()) return false;
-        for (Sector.AreaCircle c : areas) {
-            double dx = x - c.x();
-            double dz = z - c.z();
-            double r = c.r();
-            if (dx * dx + dz * dz <= r * r) return true;
+        for (Sector.AreaRect rect : areas) {
+            if (isInsideRect(x, z, rect.x1(), rect.z1(), rect.x2(), rect.z2())) return true;
         }
         return false;
+    }
+
+    private static boolean isInsideRect(double x, double z, double x1, double z1, double x2, double z2) {
+        double minX = Math.min(x1, x2);
+        double maxX = Math.max(x1, x2);
+        double minZ = Math.min(z1, z2);
+        double maxZ = Math.max(z1, z2);
+        return x >= minX && x <= maxX && z >= minZ && z <= maxZ;
     }
 }

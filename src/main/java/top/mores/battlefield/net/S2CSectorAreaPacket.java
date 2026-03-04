@@ -11,22 +11,23 @@ import java.util.function.Supplier;
 
 public class S2CSectorAreaPacket {
 
-    public static class AreaCircle {
-        public double x, z;
-        public double r;
+    public static class AreaRect {
+        public double x1, z1;
+        public double x2, z2;
 
-        public AreaCircle(double x, double z, double r) {
-            this.x = x;
-            this.z = z;
-            this.r = r;
+        public AreaRect(double x1, double z1, double x2, double z2) {
+            this.x1 = x1;
+            this.z1 = z1;
+            this.x2 = x2;
+            this.z2 = z2;
         }
     }
 
     public int sectorIndex;
-    public List<AreaCircle> attackerAreas;
-    public List<AreaCircle> defenderAreas;
+    public List<AreaRect> attackerAreas;
+    public List<AreaRect> defenderAreas;
 
-    public S2CSectorAreaPacket(int sectorIndex, List<AreaCircle> attackerAreas, List<AreaCircle> defenderAreas) {
+    public S2CSectorAreaPacket(int sectorIndex, List<AreaRect> attackerAreas, List<AreaRect> defenderAreas) {
         this.sectorIndex = sectorIndex;
         this.attackerAreas = attackerAreas;
         this.defenderAreas = defenderAreas;
@@ -36,17 +37,19 @@ public class S2CSectorAreaPacket {
         buf.writeVarInt(msg.sectorIndex);
 
         buf.writeVarInt(msg.attackerAreas.size());
-        for (AreaCircle c : msg.attackerAreas) {
-            buf.writeDouble(c.x);
-            buf.writeDouble(c.z);
-            buf.writeDouble(c.r);
+        for (AreaRect c : msg.attackerAreas) {
+            buf.writeDouble(c.x1);
+            buf.writeDouble(c.z1);
+            buf.writeDouble(c.x2);
+            buf.writeDouble(c.z2);
         }
 
         buf.writeVarInt(msg.defenderAreas.size());
-        for (AreaCircle c : msg.defenderAreas) {
-            buf.writeDouble(c.x);
-            buf.writeDouble(c.z);
-            buf.writeDouble(c.r);
+        for (AreaRect c : msg.defenderAreas) {
+            buf.writeDouble(c.x1);
+            buf.writeDouble(c.z1);
+            buf.writeDouble(c.x2);
+            buf.writeDouble(c.z2);
         }
     }
 
@@ -54,15 +57,15 @@ public class S2CSectorAreaPacket {
         int idx = buf.readVarInt();
 
         int an = buf.readVarInt();
-        List<AreaCircle> atk = new ArrayList<>(an);
+        List<AreaRect> atk = new ArrayList<>(an);
         for (int i = 0; i < an; i++) {
-            atk.add(new AreaCircle(buf.readDouble(), buf.readDouble(), buf.readDouble()));
+            atk.add(new AreaRect(buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble()));
         }
 
         int dn = buf.readVarInt();
-        List<AreaCircle> def = new ArrayList<>(dn);
+        List<AreaRect> def = new ArrayList<>(dn);
         for (int i = 0; i < dn; i++) {
-            def.add(new AreaCircle(buf.readDouble(), buf.readDouble(), buf.readDouble()));
+            def.add(new AreaRect(buf.readDouble(), buf.readDouble(), buf.readDouble(), buf.readDouble()));
         }
 
         return new S2CSectorAreaPacket(idx, atk, def);
