@@ -154,7 +154,7 @@ public final class BattlefieldHudOverlay {
         // 过期 toast 清理
         ClientGameState.pruneScoreToasts(nowTick);
 
-        int baseY = screenHeight / 2 + 40;
+        int baseY = screenHeight / 2 + 140;
 
         // ===== 总分：更大 =====
         String total = String.valueOf(ClientGameState.hudScore);
@@ -172,7 +172,7 @@ public final class BattlefieldHudOverlay {
         // ===== 多行 toast：从下往上或从上往下随你 =====
         float toastScale = 1.0f;
         int lineGap = 11;      // 行间距（未缩放前）
-        int startY = baseY + 20;
+        int startY = baseY + 16;
 
         int idx = 0;
         for (ClientGameState.ScoreToast t : ClientGameState.SCORE_TOASTS) {
