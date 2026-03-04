@@ -387,6 +387,7 @@ public final class BattlefieldGameManager {
         ctx.participants.forEach(ScoreManager::clearPlayer);
         ctx.participants.forEach(PLAYER_MATCH::remove);
         ctx.participants.clear();
+        ScoreManager.reset();
         ctx.pendingEndWinner = null;
     }
 
@@ -498,9 +499,7 @@ public final class BattlefieldGameManager {
                 .filter(id -> {
                     ServerPlayer sp = (ServerPlayer) player.serverLevel().getPlayerByUUID(id);
                     return sp != null && TeamManager.getTeam(sp) == teamId && SquadManager.getSquad(sp) == squadId;
-                })
-                .collect(Collectors.toCollection(ArrayList::new));
-        members.sort(Comparator.comparing(UUID::toString));
+                }).sorted(Comparator.comparing(UUID::toString)).collect(Collectors.toCollection(ArrayList::new));
 
         List<String> memberNames = new ArrayList<>(members.size());
         List<Integer> memberScores = new ArrayList<>(members.size());

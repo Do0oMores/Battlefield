@@ -24,7 +24,7 @@ public final class ScoreManager {
     private static final int STREAK_WINDOW_TICKS = 15 * 20;
     private static final int STREAK_KILL_BONUS = 50;
     private static final int SQUAD_WIPE_BONUS = 200;
-    private static final int HEADSHOT_KILL_BONUS=25;
+    private static final int HEADSHOT_KILL_BONUS = 25;
 
     // ===== 分数与旧HUD兼容字段 =====
     private static final Map<UUID, Integer> SCORES = new HashMap<>();
@@ -147,13 +147,13 @@ public final class ScoreManager {
     }
 
     @SubscribeEvent
-    public static void onTaczHurt(EntityHurtByGunEvent.Post event){
+    public static void onTaczHurt(EntityHurtByGunEvent.Post event) {
         if (!Battlefield.isEnabled()) return;
         if (!event.isHeadShot()) return;
         if (!(event.getHurtEntity() instanceof ServerPlayer victim)) return;
 
-        long now=victim.serverLevel().getGameTime();
-        HEADSHOT_TICK.put(victim.getUUID(),now);
+        long now = victim.serverLevel().getGameTime();
+        HEADSHOT_TICK.put(victim.getUUID(), now);
     }
 
     @SubscribeEvent
@@ -228,10 +228,10 @@ public final class ScoreManager {
         ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
         if (attacker == null) return;
         if (CombatRules.isFriendlyFire(attacker, victim)) return;
-        long now=victim.serverLevel().getGameTime();
-        Long hsTick=HEADSHOT_TICK.get(victim.getUUID());
-        if (hsTick!=null&&hsTick==now){
-            addScore(attacker,HEADSHOT_KILL_BONUS,ScoreReason.HEADSHOT);
+        long now = victim.serverLevel().getGameTime();
+        Long hsTick = HEADSHOT_TICK.get(victim.getUUID());
+        if (hsTick != null && hsTick == now) {
+            addScore(attacker, HEADSHOT_KILL_BONUS, ScoreReason.HEADSHOT);
             HEADSHOT_TICK.remove(victim.getUUID());
         }
         onKill(attacker, victim);
