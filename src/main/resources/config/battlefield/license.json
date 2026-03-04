@@ -1,0 +1,11 @@
+{
+  "payload": {
+    "product": "battlefield",
+    "licenseId": "LIC-2026-0001",
+    "notBefore": 1700000000,
+    "expiresAt": 1890000000,
+    "bind": { "mode": "uuid", "value": "你的serverId" },
+    "features": { "breakthrough": true, "rank": true }
+  },
+  "signature": "Base64签名"
+}
