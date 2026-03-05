@@ -57,6 +57,14 @@ public final class BattlefieldNet {
                 S2CScoreToastPacket::decode,
                 S2CScoreToastPacket::handle
         );
+
+        CH.registerMessage(
+                id++,
+                C2SDeployRequest.class,
+                C2SDeployRequest::encode,
+                C2SDeployRequest::decode,
+                C2SDeployRequest::handle
+        );
     }
 
     public static void sendToPlayer(ServerPlayer sp, Object pkt) {

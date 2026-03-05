@@ -5,7 +5,7 @@ import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import top.mores.battlefield.Battlefield;
-import top.mores.battlefield.client.BattlefieldHudOverlay;
+import top.mores.battlefield.client.ui.BattlefieldHudOverlay;
 
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class BattlefieldClient {

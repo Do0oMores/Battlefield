@@ -1,4 +1,4 @@
-package top.mores.battlefield.client;
+package top.mores.battlefield.client.ui;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -7,6 +7,10 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 import net.minecraftforge.client.gui.overlay.ForgeGui;
+import top.mores.battlefield.client.BattlefieldAreaRenderer;
+import top.mores.battlefield.client.ClientGameState;
+import top.mores.battlefield.client.ModSounds;
+import top.mores.battlefield.client.VoiceManager;
 import top.mores.battlefield.game.BattlefieldAreaRules;
 import top.mores.battlefield.net.S2CGameStatePacket;
 
