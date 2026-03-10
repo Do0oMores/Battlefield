@@ -65,6 +65,14 @@ public final class BattlefieldNet {
                 C2SDeployRequest::decode,
                 C2SDeployRequest::handle
         );
+
+        CH.registerMessage(
+                id++,
+                C2SAmmoStationInteractPacket.class,
+                C2SAmmoStationInteractPacket::encode,
+                C2SAmmoStationInteractPacket::decode,
+                C2SAmmoStationInteractPacket::handle
+        );
     }
 
     public static void sendToPlayer(ServerPlayer sp, Object pkt) {

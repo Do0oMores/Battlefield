@@ -1,6 +1,8 @@
 {
-  "parent": "minecraft:block/cube_all",
+  "parent": "minecraft:block/cube_bottom_top",
   "textures": {
-    "all": "minecraft:block/iron_block"
+    "top": "battlefield:block/tacz_ammo_station_top",
+    "bottom": "battlefield:block/tacz_ammo_station_bottom",
+    "side": "battlefield:block/tacz_ammo_station"
   }
 }

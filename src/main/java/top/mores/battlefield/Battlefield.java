@@ -18,7 +18,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.slf4j.Logger;
 import top.mores.battlefield.block.ModBlocks;
-import top.mores.battlefield.block.TaczAmmoCapConfig;
+import top.mores.battlefield.config.TaczAmmoCapConfig;
 import top.mores.battlefield.client.ModSounds;
 import top.mores.battlefield.command.BtCommands;
 import top.mores.battlefield.game.BattlefieldGameManager;
