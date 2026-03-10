@@ -84,7 +84,7 @@ public final class BattlefieldHudOverlay {
                 // key 保护（可选）
                 String key = (p.id == null) ? ("#" + i) : p.id;
 
-                int size = (i == activeIndex) ? (int) (baseSize * 2f) : baseSize;
+                int size = (i == activeIndex) ? (int) (baseSize * 1.75) : baseSize;
 
                 int cx = startX + i * (baseSize * 2 + gap) + baseSize;
                 int cy = diamondsY + baseSize;

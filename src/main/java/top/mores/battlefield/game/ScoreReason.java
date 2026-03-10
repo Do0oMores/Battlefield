@@ -7,7 +7,8 @@ public enum ScoreReason {
     KILL("击杀", 0xFFFFD54A, "KILL"),
     STREAK("连杀", 0xFFFFB74D, "STREAK"),
     SQUAD_WIPE("小队团灭", 0xFFFF6B6B, "SQUAD_WIPE"),
-    HEADSHOT("爆头",0xFF88FF88,"HEADSHOT");
+    HEADSHOT("爆头",0xFF88FF88,"HEADSHOT"),
+    ASSIST("助攻",0xFF88FF88,"ASSIST");
 
     public final String text;
     public final int color;

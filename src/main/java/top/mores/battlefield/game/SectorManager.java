@@ -41,7 +41,7 @@ public class SectorManager {
             }
 
             session.currentSectorIndex++;
-            broadcast(session.level, "攻方推进至下一战线！当前Index=" + session.currentSectorIndex);
+            broadcast(session.level, "攻方推进至下一战线！当前进度=" + session.currentSectorIndex);
             Sector next = session.currentSector();
             if (next != null) {
                 BattlefieldNet.sendSectorAreas(session.level, session.currentSectorIndex, next.attackerAreas, next.defenderAreas);
@@ -140,7 +140,7 @@ public class SectorManager {
     }
 
     private static void broadcast(ServerLevel level, String msg) {
-        level.getServer().getPlayerList().broadcastSystemMessage(Component.literal("[BT] " + msg), false);
+        level.getServer().getPlayerList().broadcastSystemMessage(Component.literal("[Battlefield] " + msg), false);
     }
 
     private static int clamp(int v, int min, int max) {
