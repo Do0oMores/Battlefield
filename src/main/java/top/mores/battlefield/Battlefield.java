@@ -34,6 +34,7 @@ public class Battlefield {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         // 生命周期：通用初始化
         modEventBus.addListener(this::commonSetup);
+        modEventBus.addListener(BattlefieldGameManager::onBuildCreativeTab);
         // 注册声音
         ModSounds.SOUND_EVENTS.register(modEventBus);
 
