@@ -1,7 +1,9 @@
 package top.mores.battlefield.game;
 
 import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -12,6 +14,7 @@ import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.scores.Team;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
@@ -52,6 +55,7 @@ public final class BattlefieldGameManager {
 
     private static final Map<String, MatchContext> MATCHES = new HashMap<>();
     private static final Map<UUID, String> PLAYER_MATCH = new HashMap<>();
+    private static final Map<UUID, PlacedAmmoStation> PLAYER_AMMO_STATIONS = new HashMap<>();
 
     private static SectorConfigLoader.SectorConfig config;
 
@@ -77,6 +81,8 @@ public final class BattlefieldGameManager {
             this.battleLevel = battleLevel;
         }
     }
+
+    private record PlacedAmmoStation(ResourceKey<net.minecraft.world.level.Level> dimension, BlockPos pos) {}
 
     public static void loadConfig(ServerLevel defaultLevel) {
         Path cfgDir = FMLPaths.CONFIGDIR.get().resolve("battlefield");
@@ -206,8 +212,42 @@ public final class BattlefieldGameManager {
         MATCHES.values().forEach(BattlefieldGameManager::resetMatch);
         MATCHES.clear();
         PLAYER_MATCH.clear();
+        PLAYER_AMMO_STATIONS.clear();
         config = null;
         BombardmentManager.clearAll();
+    }
+
+    @SubscribeEvent
+    public static void onBlockPlaced(BlockEvent.EntityPlaceEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (!event.getPlacedBlock().is(ModBlocks.TACZ_AMMO_STATION.get())) return;
+
+        UUID playerId = player.getUUID();
+        ServerLevel level = (ServerLevel) event.getLevel();
+        BlockPos newPos = event.getPos().immutable();
+
+        PlacedAmmoStation previous = PLAYER_AMMO_STATIONS.get(playerId);
+        if (previous != null) {
+            ServerLevel previousLevel = player.getServer().getLevel(previous.dimension());
+            if (previousLevel != null && !previous.pos().equals(newPos) && previousLevel.getBlockState(previous.pos()).is(ModBlocks.TACZ_AMMO_STATION.get())) {
+                previousLevel.removeBlock(previous.pos(), false);
+            }
+        }
+
+        PLAYER_AMMO_STATIONS.put(playerId, new PlacedAmmoStation(level.dimension(), newPos));
+    }
+
+    @SubscribeEvent
+    public static void onBlockBreak(BlockEvent.BreakEvent event) {
+        if (!(event.getPlayer() instanceof ServerPlayer player)) return;
+        if (!event.getState().is(ModBlocks.TACZ_AMMO_STATION.get())) return;
+
+        PlacedAmmoStation station = PLAYER_AMMO_STATIONS.get(player.getUUID());
+        if (station == null) return;
+
+        if (station.dimension().equals(player.serverLevel().dimension()) && station.pos().equals(event.getPos())) {
+            PLAYER_AMMO_STATIONS.remove(player.getUUID());
+        }
     }
 
     @SubscribeEvent
