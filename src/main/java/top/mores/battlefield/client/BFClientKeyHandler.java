@@ -10,7 +10,8 @@ import top.mores.battlefield.client.ui.RespawnDeployScreen;
 
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public class BFClientKeyHandler {
-    private BFClientKeyHandler() {}
+    private BFClientKeyHandler() {
+    }
 
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {

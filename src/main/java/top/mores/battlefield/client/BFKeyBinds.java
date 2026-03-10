@@ -6,7 +6,8 @@ import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import org.lwjgl.glfw.GLFW;
 
 public final class BFKeyBinds {
-    private BFKeyBinds() {}
+    private BFKeyBinds() {
+    }
 
     public static final String CATEGORY = "key.categories.battlefield";
 

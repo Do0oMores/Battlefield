@@ -9,7 +9,8 @@ public class Sector {
     public final List<AreaRect> attackerAreas;
     public final List<AreaRect> defenderAreas;
 
-    public record AreaRect(double x1, double z1, double x2, double z2) {}
+    public record AreaRect(double x1, double z1, double x2, double z2) {
+    }
 
     public Sector(String id,
                   List<CapturePoint> points,

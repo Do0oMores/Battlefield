@@ -17,6 +17,7 @@ public class RespawnDeployScreen extends Screen {
     private Button deployBtn;
     private Button bpMinus;
     private Button bpPlus;
+
     public RespawnDeployScreen() {
         super(Component.literal("重新部署"));
     }

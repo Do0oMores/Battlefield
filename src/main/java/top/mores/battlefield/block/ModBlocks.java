@@ -27,5 +27,6 @@ public final class ModBlocks {
             ITEMS.register("tacz_ammo_station",
                     () -> new BlockItem(TACZ_AMMO_STATION.get(), new Item.Properties()));
 
-    private ModBlocks() {}
+    private ModBlocks() {
+    }
 }

@@ -8,7 +8,8 @@ import top.mores.battlefield.Battlefield;
 
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class ClientModEvents {
-    private ClientModEvents() {}
+    private ClientModEvents() {
+    }
 
     @SubscribeEvent
     public static void onRegisterKeys(RegisterKeyMappingsEvent event) {

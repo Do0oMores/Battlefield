@@ -23,7 +23,8 @@ public final class TaczAmmoCapConfig {
             .disableHtmlEscaping()
             .create();
 
-    private static final Type MAP_TYPE = new TypeToken<LinkedHashMap<String, Integer>>() {}.getType();
+    private static final Type MAP_TYPE = new TypeToken<LinkedHashMap<String, Integer>>() {
+    }.getType();
 
     /**
      * 配置文件：
@@ -37,8 +38,8 @@ public final class TaczAmmoCapConfig {
      * gunId -> 总携弹上限
      * 例如：
      * {
-     *   "tacz:ak47": 90,
-     *   "tacz:m4a1": 120
+     * "tacz:ak47": 90,
+     * "tacz:m4a1": 120
      * }
      */
     private static final Map<String, Integer> CAPS = new LinkedHashMap<>();
