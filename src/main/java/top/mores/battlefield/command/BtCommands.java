@@ -9,7 +9,10 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import top.mores.battlefield.config.TaczAmmoCapConfig;
 import top.mores.battlefield.game.BattlefieldGameManager;
+import top.mores.battlefield.game.V1StrikeManager;
+import top.mores.battlefield.server.BombardmentManager;
 import top.mores.battlefield.team.TeamId;
+import top.mores.battlefield.team.TeamManager;
 
 public final class BtCommands {
     private BtCommands() {
@@ -40,6 +43,32 @@ public final class BtCommands {
                             int arenas = BattlefieldGameManager.arenaCount();
                             TaczAmmoCapConfig.reload();
                             ctx.getSource().sendSuccess(() -> Component.literal("[Battlefield] 配置热重载完成，对局数=" + arenas + "，总战线数=" + n), true);
+                            return 1;
+                        }))
+                .then(Commands.literal("testBombard")
+                        .requires(s -> s.hasPermission(2))
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            BombardmentManager.start(player, player.position());
+                            ctx.getSource().sendSuccess(() -> Component.literal("已在当前位置调用区域轰炸。"), true);
+                            return 1;
+                        }))
+                .then(Commands.literal("testV1")
+                        .requires(s -> s.hasPermission(2))
+                        .executes(ctx -> {
+                            ServerPlayer player = ctx.getSource().getPlayerOrException();
+                            TeamId ownerTeam = TeamManager.getTeam(player);
+                            if (ownerTeam == TeamId.SPECTATOR) {
+                                ctx.getSource().sendFailure(Component.literal("你当前不在进攻/防守阵营，无法测试 V1 导弹。"));
+                                return 0;
+                            }
+
+                            if (V1StrikeManager.launch(player.serverLevel(), ownerTeam, player.position(), player.position()) == null) {
+                                ctx.getSource().sendFailure(Component.literal("V1 导弹实体创建失败。"));
+                                return 0;
+                            }
+
+                            ctx.getSource().sendSuccess(() -> Component.literal("已在当前位置调用 V1 导弹。"), true);
                             return 1;
                         }))
         );
