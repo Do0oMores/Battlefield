@@ -20,8 +20,8 @@ public final class RespawnBeaconManager {
     }
 
     public static RespawnBeaconEntity placeOrReplace(ServerPlayer owner, Vec3 pos, float yaw) {
-        String matchId = GameSession.getMatchId(owner); // TODO 替换为你的战局管理器
-        UUID squadId = SquadManager.getSquadUuid(owner);       // TODO 替换为你的小队方法
+        String matchId = BattlefieldGameManager.getPlayerAreaName(owner.getUUID());
+        UUID squadId = SquadManager.getSquadUuid(owner);
         if (matchId == null || squadId == null) return null;
 
         removeOwnerBeacon(owner.server, owner.getUUID());
@@ -72,8 +72,8 @@ public final class RespawnBeaconManager {
     }
 
     public static List<RespawnBeaconEntity> getSquadBeacons(ServerPlayer viewer) {
-        UUID squadId = SquadManager.getSquadUuid(viewer);  // TODO 替换为你的小队方法
-        String matchId = GameSessionManager.getMatchId(viewer);
+        UUID squadId = SquadManager.getSquadUuid(viewer);
+        String matchId = BattlefieldGameManager.getPlayerAreaName(viewer.getUUID());
         TeamId team = TeamManager.getTeam(viewer);
 
         if (squadId == null || matchId == null) {
