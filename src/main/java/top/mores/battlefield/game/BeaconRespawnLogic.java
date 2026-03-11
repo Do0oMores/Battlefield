@@ -4,6 +4,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.phys.Vec3;
 import top.mores.battlefield.server.entity.RespawnBeaconEntity;
+import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamManager;
 
 import java.util.ArrayList;
@@ -42,8 +43,8 @@ public class BeaconRespawnLogic {
         RespawnBeaconEntity beacon = RespawnBeaconManager.findBeacon(player.server, beaconUuid);
         if (beacon == null || !beacon.isAlive()) return false;
 
-        UUID squadId = SquadManager.getSquadUuid(player); // TODO 替换
-        String matchId = GameSessionManager.getMatchId(player); // TODO 替换
+        UUID squadId = SquadManager.getSquadUuid(player);
+        String matchId = BattlefieldGameManager.getPlayerAreaName(player.getUUID());
 
         if (squadId == null || matchId == null) return false;
         if (!squadId.equals(beacon.getSquadUuid())) return false;

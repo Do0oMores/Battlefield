@@ -7,8 +7,10 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.phys.Vec3;
+import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.game.RespawnBeaconManager;
 import top.mores.battlefield.game.RespawnBeaconPlacement;
+import top.mores.battlefield.team.SquadManager;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -24,12 +26,12 @@ public class RespawnBeaconItem extends Item {
             return InteractionResult.SUCCESS;
         }
 
-        if (!GameSessionManager.isPlaying(sp)) { // TODO 替换为你的战局判断
+        if (BattlefieldGameManager.getPlayerAreaName(sp.getUUID()) == null) {
             sp.displayClientMessage(Component.literal("当前不在战局中，无法部署复活信标"), true);
             return InteractionResult.FAIL;
         }
 
-        UUID squadId = SquadManager.getSquadUuid(sp); // TODO 替换为你的小队方法
+        UUID squadId = SquadManager.getSquadUuid(sp);
         if (squadId == null) {
             sp.displayClientMessage(Component.literal("你当前没有小队，无法部署复活信标"), true);
             return InteractionResult.FAIL;

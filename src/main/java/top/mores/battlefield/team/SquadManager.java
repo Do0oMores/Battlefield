@@ -2,6 +2,7 @@ package top.mores.battlefield.team;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import top.mores.battlefield.game.BattlefieldGameManager;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -9,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 public final class SquadManager {
     private static final Random RANDOM = new Random();
@@ -23,6 +25,18 @@ public final class SquadManager {
         TeamId team = TeamManager.getTeam(p);
         if (team == TeamId.SPECTATOR) return 0;
         return SquadSavedData.get(p.serverLevel()).mapFor(team).getOrDefault(p.getUUID(), 0);
+    }
+
+    public static UUID getSquadUuid(ServerPlayer p) {
+        TeamId team = TeamManager.getTeam(p);
+        int squadId = getSquad(p);
+        if (team == TeamId.SPECTATOR || squadId <= 0) return null;
+
+        String matchId = BattlefieldGameManager.getPlayerAreaName(p.getUUID());
+        if (matchId == null || matchId.isBlank()) return null;
+
+        String key = matchId + ":" + team.name() + ":" + squadId;
+        return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
     }
 
     public static int getSquad(ServerLevel level, UUID playerId, TeamId team) {
