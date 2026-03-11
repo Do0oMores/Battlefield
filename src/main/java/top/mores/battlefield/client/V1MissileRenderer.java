@@ -10,7 +10,10 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.inventory.InventoryMenu;
+import org.jetbrains.annotations.NotNull;
 import top.mores.battlefield.server.entity.V1MissileEntity;
+import top.mores.battlefield.block.ModBlocks;
 
 public class V1MissileRenderer extends EntityRenderer<V1MissileEntity> {
     private final BlockRenderDispatcher blockRenderer;
@@ -26,7 +29,7 @@ public class V1MissileRenderer extends EntityRenderer<V1MissileEntity> {
                        float entityYaw,
                        float partialTick,
                        PoseStack poseStack,
-                       MultiBufferSource buffer,
+                       @NotNull MultiBufferSource buffer,
                        int packedLight) {
         poseStack.pushPose();
 
@@ -54,7 +57,7 @@ public class V1MissileRenderer extends EntityRenderer<V1MissileEntity> {
     }
 
     @Override
-    public ResourceLocation getTextureLocation(V1MissileEntity entity) {
-        return Sheets.BLOCK_ATLAS;
+    public @NotNull ResourceLocation getTextureLocation(@NotNull V1MissileEntity entity) {
+        return InventoryMenu.BLOCK_ATLAS;
     }
 }

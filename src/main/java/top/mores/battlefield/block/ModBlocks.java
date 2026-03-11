@@ -27,6 +27,14 @@ public final class ModBlocks {
             ITEMS.register("tacz_ammo_station",
                     () -> new BlockItem(TACZ_AMMO_STATION.get(), new Item.Properties()));
 
+    public static final RegistryObject<Block> V1_MISSILE =
+            BLOCKS.register("v1_missile",
+                    () -> new Block(
+                            BlockBehaviour.Properties.copy(Blocks.IRON_BLOCK)
+                                    .noOcclusion()
+                                    .strength(2.0F)
+                    ));
+
     private ModBlocks() {
     }
 }

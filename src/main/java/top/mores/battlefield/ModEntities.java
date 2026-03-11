@@ -8,8 +8,9 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 import top.mores.battlefield.server.entity.BombEntity;
+import top.mores.battlefield.server.entity.V1MissileEntity;
 
-public class ModEntities {
+public final class ModEntities {
     public static final DeferredRegister<EntityType<?>> ENTITIES =
             DeferredRegister.create(Registries.ENTITY_TYPE, Battlefield.MODID);
 
@@ -21,9 +22,18 @@ public class ModEntities {
                             .updateInterval(1)
                             .build(new ResourceLocation(Battlefield.MODID, "bomb").toString()));
 
+    public static final RegistryObject<EntityType<V1MissileEntity>> V1_MISSILE =
+            ENTITIES.register("v1_missile",
+                    () -> EntityType.Builder.<V1MissileEntity>of(V1MissileEntity::new, MobCategory.MISC)
+                            .sized(0.9f, 0.9f)
+                            .clientTrackingRange(128)
+                            .updateInterval(1)
+                            .build(new ResourceLocation(Battlefield.MODID, "v1_missile").toString()));
+
     public static void register(IEventBus bus) {
         ENTITIES.register(bus);
     }
 
-    private ModEntities() {}
+    private ModEntities() {
+    }
 }
