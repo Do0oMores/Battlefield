@@ -5,10 +5,13 @@ import com.tacz.guns.api.item.IAmmo;
 import com.tacz.guns.api.item.IAmmoBox;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.api.item.builder.AmmoItemBuilder;
+import com.tacz.guns.resource.index.CommonAmmoIndex;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Inventory;
@@ -20,11 +23,18 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.NotNull;
 import top.mores.battlefield.config.TaczAmmoCapConfig;
-import com.tacz.guns.resource.index.CommonAmmoIndex;
+import top.mores.battlefield.net.BattlefieldNet;
+import top.mores.battlefield.net.S2CAmmoStationCooldownPacket;
 
 import javax.annotation.Nullable;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public class TaczAmmoStationBlock extends Block {
+
+    private static final long COOLDOWN_TICKS = 15L * 20L;
+    private static final Map<CooldownKey, Long> COOLDOWN_MAP = new HashMap<>();
 
     public TaczAmmoStationBlock(Properties properties) {
         super(properties);
@@ -44,7 +54,6 @@ public class TaczAmmoStationBlock extends Block {
             return InteractionResult.SUCCESS;
         }
 
-        // 这里只作为“非枪状态下的普通右键兜底”
         return trySupply(level, pos, state, player)
                 ? InteractionResult.CONSUME
                 : InteractionResult.PASS;
@@ -59,11 +68,30 @@ public class TaczAmmoStationBlock extends Block {
             return false;
         }
 
+        long now = level.getGameTime();
+        CooldownKey cooldownKey = new CooldownKey(level.dimension(), pos.immutable(), player.getUUID());
+        long remainTicks = getRemainingCooldown(now, cooldownKey);
+        if (remainTicks > 0) {
+            int remainSeconds = (int) Math.ceil(remainTicks / 20.0D);
+
+            syncCooldownToClient(player, pos, remainTicks);
+
+            player.displayClientMessage(
+                    Component.literal("【冷却中，" + remainSeconds + "秒后可用】")
+                            .withStyle(ChatFormatting.RED),
+                    true
+            );
+            return true;
+        }
+
         ItemStack gunStack = player.getMainHandItem();
         IGun iGun = IGun.getIGunOrNull(gunStack);
         if (iGun == null) {
-            player.displayClientMessage(Component.literal("主手物品不为枪械，无法补充备弹")
-                    .withStyle(ChatFormatting.RED), true);
+            player.displayClientMessage(
+                    Component.literal("主手物品不为枪械，无法补充备弹")
+                            .withStyle(ChatFormatting.RED),
+                    true
+            );
             return true;
         }
 
@@ -74,14 +102,21 @@ public class TaczAmmoStationBlock extends Block {
         int reserveNow = getCurrentReserveAmmo(player, gunStack, iGun);
 
         if (reserveNow == Integer.MAX_VALUE) {
-            player.sendSystemMessage(Component.literal("已有无限子弹，无需补给"));
+            player.displayClientMessage(
+                    Component.literal("已有无限子弹，无需补给")
+                            .withStyle(ChatFormatting.YELLOW),
+                    true
+            );
             return true;
         }
 
         int need = Math.max(0, totalCarryCap - currentMag - reserveNow);
         if (need == 0) {
-            player.displayClientMessage(Component.literal("弹药已满")
-                    .withStyle(ChatFormatting.RED), true);
+            player.displayClientMessage(
+                    Component.literal("弹药已满")
+                            .withStyle(ChatFormatting.RED),
+                    true
+            );
             return true;
         }
 
@@ -93,14 +128,37 @@ public class TaczAmmoStationBlock extends Block {
         }
 
         if (!ok) {
-            player.sendSystemMessage(Component.literal("未找到对应的弹药类型")
-                    .withStyle(ChatFormatting.RED));
+            player.displayClientMessage(
+                    Component.literal("未找到对应的弹药类型")
+                            .withStyle(ChatFormatting.RED),
+                    true
+            );
             return true;
         }
 
-        player.displayClientMessage(Component.literal("已补给 " + need + " 发备弹")
-                .withStyle(ChatFormatting.GREEN), true);
+        COOLDOWN_MAP.put(cooldownKey, now + COOLDOWN_TICKS);
+        syncCooldownToClient(player, pos, COOLDOWN_TICKS);
+
+        player.displayClientMessage(
+                Component.literal("已补给 " + need + " 发备弹")
+                        .withStyle(ChatFormatting.GREEN),
+                true
+        );
         return true;
+    }
+
+    private static long getRemainingCooldown(long now, CooldownKey key) {
+        Long endTick = COOLDOWN_MAP.get(key);
+        if (endTick == null) {
+            return 0L;
+        }
+
+        long remain = endTick - now;
+        if (remain <= 0L) {
+            COOLDOWN_MAP.remove(key);
+            return 0L;
+        }
+        return remain;
     }
 
     private static int getCurrentReserveAmmo(Player player, ItemStack gunStack, IGun iGun) {
@@ -199,5 +257,28 @@ public class TaczAmmoStationBlock extends Block {
                 .filter(v -> v > 0)
                 .orElse(30);
         return magSize * 3;
+    }
+
+    private static void syncCooldownToClient(Player player, BlockPos pos, long remainingTicks) {
+        if (player instanceof ServerPlayer serverPlayer) {
+            BattlefieldNet.sendToPlayer(serverPlayer,
+                    new S2CAmmoStationCooldownPacket(pos, (int) Math.max(0L, remainingTicks)));
+        }
+    }
+
+    private record CooldownKey(ResourceKey<Level> dimension, BlockPos pos, UUID playerId) {
+    }
+
+    public static void cleanupExpiredCooldowns(Level level) {
+        if (level.isClientSide) {
+            return;
+        }
+
+        long now = level.getGameTime();
+        COOLDOWN_MAP.entrySet().removeIf(entry -> entry.getValue() <= now);
+    }
+
+    public static void removePlayerCooldowns(UUID playerId) {
+        COOLDOWN_MAP.entrySet().removeIf(entry -> entry.getKey().playerId().equals(playerId));
     }
 }

@@ -23,6 +23,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.block.ModBlocks;
+import top.mores.battlefield.block.TaczAmmoStationBlock;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.config.SectorConfigLoader;
