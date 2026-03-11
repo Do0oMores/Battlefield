@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "battlefield:block/v1_missile"
+    }
+  }
+}

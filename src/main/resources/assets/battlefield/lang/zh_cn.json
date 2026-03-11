@@ -1,3 +1,5 @@
 {
-  "block.battlefield.tacz_ammo_station": "军需补给箱"
+  "block.battlefield.tacz_ammo_station": "军需补给箱",
+  "block.battlefield.medical_supply_crate": "医疗箱",
+  "block.battlefield.v1_missile": "V1导弹"
 }

@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "battlefield:block/medical_supply_crate"
+    }
+  }
+}

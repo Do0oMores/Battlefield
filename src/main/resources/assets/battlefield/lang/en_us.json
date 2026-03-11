@@ -1,3 +1,5 @@
 {
-  "block.battlefield.tacz_ammo_station": "Supply Ammo Crate"
+  "block.battlefield.tacz_ammo_station": "Supply Ammo Crate",
+  "block.battlefield.medical_supply_crate": "Medical Supply Crate",
+  "block.battlefield.v1_missile": "V1 Missile"
 }

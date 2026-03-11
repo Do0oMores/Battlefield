@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "battlefield:block/medical_supply_crate_top",
+    "bottom": "battlefield:block/medical_supply_crate_bottom",
+    "side": "battlefield:block/medical_supply_crate"
+  }
+}

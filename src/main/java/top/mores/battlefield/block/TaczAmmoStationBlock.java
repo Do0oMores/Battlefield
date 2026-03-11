@@ -5,6 +5,7 @@ import com.tacz.guns.api.item.IAmmo;
 import com.tacz.guns.api.item.IAmmoBox;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.api.item.builder.AmmoItemBuilder;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -31,7 +32,7 @@ public class TaczAmmoStationBlock extends Block {
 
     @Override
     public @NotNull InteractionResult use(@NotNull BlockState state,
-                                          Level level,
+                                          @NotNull Level level,
                                           @NotNull BlockPos pos,
                                           @NotNull Player player,
                                           @NotNull InteractionHand hand,
@@ -61,7 +62,8 @@ public class TaczAmmoStationBlock extends Block {
         ItemStack gunStack = player.getMainHandItem();
         IGun iGun = IGun.getIGunOrNull(gunStack);
         if (iGun == null) {
-            player.sendSystemMessage(Component.literal("主手物品不为枪械，无法补充备弹"));
+            player.displayClientMessage(Component.literal("主手物品不为枪械，无法补充备弹")
+                    .withStyle(ChatFormatting.RED), true);
             return true;
         }
 
@@ -78,7 +80,8 @@ public class TaczAmmoStationBlock extends Block {
 
         int need = Math.max(0, totalCarryCap - currentMag - reserveNow);
         if (need == 0) {
-            player.sendSystemMessage(Component.literal("弹药已满"));
+            player.displayClientMessage(Component.literal("弹药已满")
+                    .withStyle(ChatFormatting.RED), true);
             return true;
         }
 
@@ -90,11 +93,13 @@ public class TaczAmmoStationBlock extends Block {
         }
 
         if (!ok) {
-            player.sendSystemMessage(Component.literal("未找到对应的弹药类型"));
+            player.sendSystemMessage(Component.literal("未找到对应的弹药类型")
+                    .withStyle(ChatFormatting.RED));
             return true;
         }
 
-        player.sendSystemMessage(Component.literal("已补给 " + need + " 发备弹"));
+        player.displayClientMessage(Component.literal("已补给 " + need + " 发备弹")
+                .withStyle(ChatFormatting.GREEN), true);
         return true;
     }
 
