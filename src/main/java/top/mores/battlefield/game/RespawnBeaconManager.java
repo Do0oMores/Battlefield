@@ -8,6 +8,7 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import top.mores.battlefield.ModEntities;
 import top.mores.battlefield.server.entity.RespawnBeaconEntity;
+import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 

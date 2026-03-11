@@ -8,6 +8,7 @@ import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 import top.mores.battlefield.server.entity.BombEntity;
+import top.mores.battlefield.server.entity.RespawnBeaconEntity;
 import top.mores.battlefield.server.entity.V1MissileEntity;
 
 public final class ModEntities {
