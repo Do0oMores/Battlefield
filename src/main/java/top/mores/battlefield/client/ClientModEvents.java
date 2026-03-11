@@ -21,5 +21,6 @@ public final class ClientModEvents {
     @SubscribeEvent
     public static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.V1_MISSILE.get(), V1MissileRenderer::new);
+        event.registerEntityRenderer(ModEntities.BOMB.get(), BombRenderer::new);
     }
 }

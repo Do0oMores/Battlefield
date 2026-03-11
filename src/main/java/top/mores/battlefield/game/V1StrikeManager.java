@@ -1,7 +1,6 @@
 package top.mores.battlefield.game;
 
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import top.mores.battlefield.ModEntities;
 import top.mores.battlefield.server.entity.V1MissileEntity;
@@ -60,10 +59,6 @@ public final class V1StrikeManager {
     }
 
     private static int computeFlightTicks(Vec3 start, Vec3 target) {
-        double dx = target.x - start.x;
-        double dz = target.z - start.z;
-        double horizontalDist = Math.sqrt(dx * dx + dz * dz);
-
-        return Mth.clamp((int) (horizontalDist / 2.2), 60, 130);
+        return 30 * 20;
     }
 }
