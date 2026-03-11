@@ -35,6 +35,13 @@ public final class ModBlocks {
                                     .strength(2.0F)
                     ));
 
+    public static final RegistryObject<Block> RESPAWN_BEACON =
+            BLOCKS.register("respawn_beacon", RespawnBeaconDisplayBlock::new);
+
+    public static final RegistryObject<Item> RESPAWN_ITEMS =
+            ITEMS.register("respawn_beacon", () ->
+                    new RespawnBeaconItem(new Item.Properties().stacksTo(1)));
+
     private ModBlocks() {
     }
 }

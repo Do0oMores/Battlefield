@@ -30,6 +30,15 @@ public final class ModEntities {
                             .updateInterval(1)
                             .build(new ResourceLocation(Battlefield.MODID, "v1_missile").toString()));
 
+    public static final RegistryObject<EntityType<RespawnBeaconEntity>> RESPAWN_BEACON =
+            ENTITIES.register("respawn_beacon", () ->
+                    EntityType.Builder.<RespawnBeaconEntity>of(RespawnBeaconEntity::new, MobCategory.MISC)
+                            .sized(0.90f, 1.20f)
+                            .clientTrackingRange(10)
+                            .updateInterval(1)
+                            .build(Battlefield.MODID + ":respawn_beacon")
+            );
+
     public static void register(IEventBus bus) {
         ENTITIES.register(bus);
     }

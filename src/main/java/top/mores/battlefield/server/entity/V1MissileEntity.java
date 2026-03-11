@@ -18,6 +18,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkHooks;
+import org.jetbrains.annotations.NotNull;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 
@@ -97,19 +98,17 @@ public class V1MissileEntity extends Entity {
     }
 
     @Override
-    public Packet<ClientGamePacketListener> getAddEntityPacket() {
+    public @NotNull Packet<ClientGamePacketListener> getAddEntityPacket() {
         return NetworkHooks.getEntitySpawningPacket(this);
     }
 
     @Override
-    public boolean hurt(DamageSource source, float amount) {
-        // 不能被攻击
+    public boolean hurt(@NotNull DamageSource source, float amount) {
         return false;
     }
 
     @Override
     public boolean isPickable() {
-        // 不允许被命中判定当作可交互/可攻击实体
         return false;
     }
 
@@ -190,7 +189,6 @@ public class V1MissileEntity extends Entity {
     }
 
     private void playFlightSound() {
-        // 先用占位音效，后面你可以换成自己的 V1 飞行声
         if (elapsedTicks % 8 == 0) {
             level().playSound(null, getX(), getY(), getZ(),
                     SoundEvents.ELYTRA_FLYING,
