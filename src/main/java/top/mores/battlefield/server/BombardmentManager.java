@@ -13,6 +13,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.PacketDistributor;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.ModEntities;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CBombardSmokePacket;
 import top.mores.battlefield.server.entity.BombEntity;
@@ -26,13 +27,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class BombardmentManager {
     private BombardmentManager() {}
-
-    public static final int DURATION_TICKS = 15 * 20; // 15s
-    public static final int TOTAL_BOMBS = 30;
-    public static final int INTERVAL_TICKS = DURATION_TICKS / TOTAL_BOMBS; // 10 ticks
-    public static final float RADIUS = 20f;
-    public static final float DAMAGE_RADIUS = 3f;
-    public static final float MAX_DAMAGE = 18f;
 
     private record Key(ServerLevel level, UUID owner) {}
     private record Instance(UUID owner, TeamId ownerTeam, Vec3 center, long startTick, long endTick) {}
@@ -48,7 +42,7 @@ public final class BombardmentManager {
         TeamId ownerTeam = TeamManager.getTeam(player);
 
         RUNNING.put(new Key(level, player.getUUID()),
-                new Instance(player.getUUID(), ownerTeam, center, now, now + DURATION_TICKS));
+                new Instance(player.getUUID(), ownerTeam, center, now, now + BattlefieldServerConfig.get().bombardDurationTicks));
     }
 
     public static void stop(ServerPlayer player) {
@@ -96,17 +90,22 @@ public final class BombardmentManager {
                 spawnAreaSmoke(level, inst.owner(), inst.ownerTeam(), inst.center(), level.getRandom());
             }
 
-            if ((now - inst.startTick()) % INTERVAL_TICKS == 0) {
+            if ((now - inst.startTick()) % bombardIntervalTicks() == 0) {
                 spawnOneBomb(level, inst.owner(), inst.ownerTeam(), inst.center(), level.getRandom());
             }
         }
+    }
+
+    private static int bombardIntervalTicks() {
+        int totalBombs = Math.max(1, BattlefieldServerConfig.get().bombardTotalBombs);
+        return Math.max(1, BattlefieldServerConfig.get().bombardDurationTicks / totalBombs);
     }
 
     private static void spawnOneBomb(ServerLevel level, UUID owner, TeamId ownerTeam, Vec3 center, RandomSource rand) {
         // 圆内均匀随机落点
         double ang = rand.nextDouble() * Math.PI * 2.0;
         double u = rand.nextDouble();
-        double rr = RADIUS * Math.sqrt(u);
+        double rr = BattlefieldServerConfig.get().bombardRadius * Math.sqrt(u);
 
         double tx = center.x + Math.cos(ang) * rr;
         double tz = center.z + Math.sin(ang) * rr;
@@ -130,8 +129,8 @@ public final class BombardmentManager {
                 level,
                 new Vec3(tx, spawnY, tz),
                 new Vec3(tx, ty, tz),
-                DAMAGE_RADIUS,
-                MAX_DAMAGE,
+                BattlefieldServerConfig.get().bombardDamageRadius,
+                BattlefieldServerConfig.get().bombardMaxDamage,
                 owner,
                 ownerTeam
         );
@@ -150,7 +149,7 @@ public final class BombardmentManager {
         for (int i = 0; i < 6; i++) {
             double ang = rand.nextDouble() * Math.PI * 2.0;
             double u = rand.nextDouble();
-            double rr = RADIUS * Math.sqrt(u);
+            double rr = BattlefieldServerConfig.get().bombardRadius * Math.sqrt(u);
 
             double x = center.x + Math.cos(ang) * rr;
             double z = center.z + Math.sin(ang) * rr;

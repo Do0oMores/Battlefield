@@ -19,6 +19,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.NetworkHooks;
 import org.jetbrains.annotations.NotNull;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 
@@ -229,8 +230,8 @@ public class V1MissileEntity extends Entity {
     }
 
     private void damageEnemies(ServerLevel level, Vec3 pos) {
-        final double killRadius = 20.0;
-        final double maxRadius = 30.0;
+        final double killRadius = BattlefieldServerConfig.get().v1KillRadius;
+        final double maxRadius = BattlefieldServerConfig.get().v1MaxDamageRadius;
         final double maxRadiusSqr = maxRadius * maxRadius;
 
         for (ServerPlayer sp : level.getPlayers(player ->
@@ -252,7 +253,7 @@ public class V1MissileEntity extends Entity {
 
             // 20~30 格二次衰减
             double x = (dist - killRadius) / (maxRadius - killRadius); // 0..1
-            float damage = (float) (40.0 * (1.0 - x) * (1.0 - x));
+            float damage = (float) (BattlefieldServerConfig.get().v1MaxDamage * (1.0 - x) * (1.0 - x));
             if (damage > 0.5F) {
                 sp.invulnerableTime = 0;
                 sp.hurt(level.damageSources().explosion(this, null), damage);

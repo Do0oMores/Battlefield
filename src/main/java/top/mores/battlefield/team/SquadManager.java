@@ -2,6 +2,7 @@ package top.mores.battlefield.team;
 
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.game.BattlefieldGameManager;
 
 import java.util.ArrayList;
@@ -18,8 +19,6 @@ public final class SquadManager {
     private SquadManager() {
     }
 
-    public static final int SQUAD_CAP = 4;
-    public static final int TEAM_SQUAD_CAP = 16;
 
     public static int getSquad(ServerPlayer p) {
         TeamId team = TeamManager.getTeam(p);
@@ -65,7 +64,8 @@ public final class SquadManager {
         int existing = map.getOrDefault(p.getUUID(), 0);
         if (existing > 0) return true;
 
-        for (int i = 1; i <= TEAM_SQUAD_CAP; i++) {
+        int teamSquadCap = BattlefieldServerConfig.get().teamSquadCap;
+        for (int i = 1; i <= teamSquadCap; i++) {
             if (!squadExists(map, i)) {
                 map.put(p.getUUID(), i);
                 data.setDirty();
@@ -78,14 +78,14 @@ public final class SquadManager {
     public static boolean joinSquad(ServerPlayer p, int squadId) {
         TeamId team = TeamManager.getTeam(p);
         if (team == TeamId.SPECTATOR) return false;
-        if (squadId < 1 || squadId > TEAM_SQUAD_CAP) return false;
+        if (squadId < 1 || squadId > BattlefieldServerConfig.get().teamSquadCap) return false;
 
         ServerLevel level = p.serverLevel();
         SquadSavedData data = SquadSavedData.get(level);
         Map<UUID, Integer> map = data.mapFor(team);
 
         if (!squadExists(map, squadId)) return false;
-        if (countMembers(map, squadId) >= SQUAD_CAP) return false;
+        if (countMembers(map, squadId) >= BattlefieldServerConfig.get().squadCap) return false;
 
         map.put(p.getUUID(), squadId);
         data.setDirty();
@@ -120,8 +120,8 @@ public final class SquadManager {
         if (current > 0) return;
 
         List<Integer> joinable = new ArrayList<>();
-        for (int i = 1; i <= TEAM_SQUAD_CAP; i++) {
-            if (squadExists(map, i) && countMembers(map, i) < SQUAD_CAP) {
+        for (int i = 1; i <= BattlefieldServerConfig.get().teamSquadCap; i++) {
+            if (squadExists(map, i) && countMembers(map, i) < BattlefieldServerConfig.get().squadCap) {
                 joinable.add(i);
             }
         }
@@ -170,7 +170,7 @@ public final class SquadManager {
     }
 
     private static int firstFreeSquadId(Map<UUID, Integer> map) {
-        for (int i = 1; i <= TEAM_SQUAD_CAP; i++) {
+        for (int i = 1; i <= BattlefieldServerConfig.get().teamSquadCap; i++) {
             if (!squadExists(map, i)) return i;
         }
         return 0;

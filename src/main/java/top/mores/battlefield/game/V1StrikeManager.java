@@ -3,6 +3,7 @@ package top.mores.battlefield.game;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
 import top.mores.battlefield.ModEntities;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.server.entity.V1MissileEntity;
 import top.mores.battlefield.team.TeamId;
 
@@ -40,8 +41,11 @@ public final class V1StrikeManager {
         Vec3 dir = flat.normalize();
 
         // 从己方出生点“后方”拉开一段，再抬高
-        Vec3 horizontalStart = teamSpawn.subtract(dir.scale(60.0));
-        double startY = Math.max(teamSpawn.y + 120.0 + level.random.nextInt(81), target.y + 70.0);
+        Vec3 horizontalStart = teamSpawn.subtract(dir.scale(BattlefieldServerConfig.get().v1StartBackwardDistance));
+        double startY = Math.max(
+                teamSpawn.y + BattlefieldServerConfig.get().v1StartHeightBase + level.random.nextInt(BattlefieldServerConfig.get().v1StartHeightRandom),
+                target.y + BattlefieldServerConfig.get().v1TargetMinHeightOffset
+        );
 
         return new Vec3(horizontalStart.x, startY, horizontalStart.z);
     }
@@ -52,13 +56,13 @@ public final class V1StrikeManager {
         double dz = target.z - start.z;
         double horizontalDist = Math.sqrt(dx * dx + dz * dz);
 
-        double arcHeight = Math.max(45.0, horizontalDist * 0.18);
+        double arcHeight = Math.max(BattlefieldServerConfig.get().v1ArcHeightMin, horizontalDist * BattlefieldServerConfig.get().v1ArcHeightScale);
         double controlY = Math.max(start.y, target.y) + arcHeight;
 
         return new Vec3(mid.x, controlY, mid.z);
     }
 
     private static int computeFlightTicks(Vec3 start, Vec3 target) {
-        return 30 * 20;
+        return BattlefieldServerConfig.get().v1FlightTicks;
     }
 }

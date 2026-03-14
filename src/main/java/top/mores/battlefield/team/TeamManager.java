@@ -5,11 +5,12 @@ import net.minecraft.server.level.ServerPlayer;
 
 import java.util.UUID;
 
+import top.mores.battlefield.config.BattlefieldServerConfig;
+
 public final class TeamManager {
     private TeamManager() {
     }
 
-    public static final int TEAM_CAP = 16;
 
     public static TeamId getTeam(ServerPlayer p) {
         ServerLevel level = p.serverLevel();
@@ -47,11 +48,13 @@ public final class TeamManager {
         int def = countTeam(level, TeamId.DEFENDERS);
 
         TeamId pick;
-        if (atk >= TEAM_CAP && def >= TEAM_CAP) {
+        int teamCap = BattlefieldServerConfig.get().teamCap;
+
+        if (atk >= teamCap && def >= teamCap) {
             pick = TeamId.SPECTATOR;
-        } else if (atk >= TEAM_CAP) {
+        } else if (atk >= teamCap) {
             pick = TeamId.DEFENDERS;
-        } else if (def >= TEAM_CAP) {
+        } else if (def >= teamCap) {
             pick = TeamId.ATTACKERS;
         } else {
             pick = (atk <= def) ? TeamId.ATTACKERS : TeamId.DEFENDERS;
