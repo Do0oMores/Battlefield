@@ -9,6 +9,7 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.InventoryMenu;
+import org.jetbrains.annotations.NotNull;
 import top.mores.battlefield.block.ModBlocks;
 import top.mores.battlefield.server.entity.RespawnBeaconEntity;
 
@@ -22,11 +23,11 @@ public class RespawnBeaconRenderer extends EntityRenderer<RespawnBeaconEntity> {
     }
 
     @Override
-    public void render(RespawnBeaconEntity entity,
+    public void render(@NotNull RespawnBeaconEntity entity,
                        float entityYaw,
                        float partialTick,
                        PoseStack poseStack,
-                       MultiBufferSource buffer,
+                       @NotNull MultiBufferSource buffer,
                        int packedLight) {
 
         poseStack.pushPose();
@@ -46,7 +47,7 @@ public class RespawnBeaconRenderer extends EntityRenderer<RespawnBeaconEntity> {
     }
 
     @Override
-    public ResourceLocation getTextureLocation(RespawnBeaconEntity entity) {
+    public @NotNull ResourceLocation getTextureLocation(@NotNull RespawnBeaconEntity entity) {
         return InventoryMenu.BLOCK_ATLAS;
     }
 }

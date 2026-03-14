@@ -81,6 +81,22 @@ public final class BattlefieldNet {
                 S2CAmmoStationCooldownPacket::decode,
                 S2CAmmoStationCooldownPacket::handle
         );
+
+        CH.registerMessage(
+                id++,
+                C2SRequestBackpackPreview.class,
+                C2SRequestBackpackPreview::encode,
+                C2SRequestBackpackPreview::decode,
+                C2SRequestBackpackPreview::handle
+        );
+
+        CH.registerMessage(
+                id++,
+                S2CBackpackPreview.class,
+                S2CBackpackPreview::encode,
+                S2CBackpackPreview::decode,
+                S2CBackpackPreview::handle
+        );
     }
 
     public static void sendToPlayer(ServerPlayer sp, Object pkt) {
