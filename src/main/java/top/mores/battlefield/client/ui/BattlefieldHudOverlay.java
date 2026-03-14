@@ -11,6 +11,7 @@ import top.mores.battlefield.client.BattlefieldAreaRenderer;
 import top.mores.battlefield.client.ClientGameState;
 import top.mores.battlefield.client.ModSounds;
 import top.mores.battlefield.client.VoiceManager;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.game.BattlefieldAreaRules;
 import top.mores.battlefield.net.S2CGameStatePacket;
 
@@ -251,7 +252,7 @@ public final class BattlefieldHudOverlay {
         g.fill(0, 0, screenWidth, screenHeight, 0x88000000);
 
         String title = "您正在离开战斗区域";
-        int remainingTicks = Math.max(0, BattlefieldAreaRules.OUTSIDE_AREA_KILL_TICKS
+        int remainingTicks = Math.max(0, BattlefieldServerConfig.get().outsideAreaKillTicks
                 - BattlefieldAreaRenderer.getOutsideAreaTicks());
         int seconds = Mth.ceil(remainingTicks / 20.0f);
         String countdown = seconds + " 秒";

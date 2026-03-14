@@ -12,15 +12,9 @@ import top.mores.battlefield.team.TeamManager;
 
 import java.util.List;
 
+import top.mores.battlefield.config.BattlefieldServerConfig;
+
 public class SectorManager {
-    public static final int CAPTURE_INTERVAL_TICKS = 10; // 0.5s
-    public static final int SCORE_AWARD_INTERVAL_TICKS = 60; // 3s
-
-    public static final int BASE_STEP = 4;   // 每 0.5s 最少推进 4
-    public static final int BONUS_STEP = 2;
-    public static final int EMPTY_DECAY_STEP = 2;
-    public static final boolean DECAY_ON_TIE = false;
-
     public void tick(GameSession session) {
         if (!session.running) return;
 
@@ -51,7 +45,7 @@ public class SectorManager {
 
     private void updatePoint(GameSession session, CapturePoint point) {
         ServerLevel level = session.level;
-        boolean shouldAwardScore = level.getGameTime() % SCORE_AWARD_INTERVAL_TICKS == 0;
+        boolean shouldAwardScore = level.getGameTime() % BattlefieldServerConfig.get().scoreAwardIntervalTicks == 0;
 
         int attackers = 0;
         int defenders = 0;
@@ -94,16 +88,16 @@ public class SectorManager {
         // ① 点内无人：向“当前控制方 owner”回满（到 ±100）
         if (attackers == 0 && defenders == 0) {
             if (point.owner == TeamId.ATTACKERS) {
-                if (old < 100) point.setProgress(Math.min(100, old + EMPTY_DECAY_STEP));
+                if (old < 100) point.setProgress(Math.min(100, old + BattlefieldServerConfig.get().captureEmptyDecayStep));
             } else if (point.owner == TeamId.DEFENDERS) {
-                if (old > -100) point.setProgress(Math.max(-100, old - EMPTY_DECAY_STEP));
+                if (old > -100) point.setProgress(Math.max(-100, old - BattlefieldServerConfig.get().captureEmptyDecayStep));
             }
             return;
         }
 
         // ② 人数相同：僵持（默认不动；若你想“僵持也慢慢回 owner”，打开 DECAY_ON_TIE）
         if (attackers == defenders) {
-            if (DECAY_ON_TIE) {
+            if (BattlefieldServerConfig.get().captureDecayOnTie) {
                 if (point.owner == TeamId.ATTACKERS) {
                     if (old < 100) point.setProgress(Math.min(100, old + 1));
                 } else if (point.owner == TeamId.DEFENDERS) {
@@ -117,10 +111,10 @@ public class SectorManager {
         int step;
         if (attackers > defenders) {
             int diff = attackers - defenders;
-            step = BASE_STEP + BONUS_STEP * (diff - 1);        // progress 增大：偏向 ATTACKERS
+            step = BattlefieldServerConfig.get().captureBaseStep + BattlefieldServerConfig.get().captureBonusStep * (diff - 1);        // progress 增大：偏向 ATTACKERS
         } else {
             int diff = defenders - attackers;
-            step = -(BASE_STEP + BONUS_STEP * (diff - 1));     // progress 减小：偏向 DEFENDERS
+            step = -(BattlefieldServerConfig.get().captureBaseStep + BattlefieldServerConfig.get().captureBonusStep * (diff - 1));     // progress 减小：偏向 DEFENDERS
         }
 
         int now = clamp(old + step, -100, 100);

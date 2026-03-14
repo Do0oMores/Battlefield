@@ -19,6 +19,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 import org.slf4j.Logger;
 import top.mores.battlefield.block.ModBlocks;
 import top.mores.battlefield.config.TaczAmmoCapConfig;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.client.ModSounds;
 import top.mores.battlefield.command.BtCommands;
 import top.mores.battlefield.game.BattlefieldGameManager;
@@ -41,6 +42,7 @@ public class Battlefield {
         // 注册配置
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, Config.SPEC);
         TaczAmmoCapConfig.init();
+        BattlefieldServerConfig.init();
 
         // Forge 事件
         MinecraftForge.EVENT_BUS.register(this);

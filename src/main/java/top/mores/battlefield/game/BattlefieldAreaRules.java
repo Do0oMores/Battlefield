@@ -6,12 +6,12 @@ import top.mores.battlefield.client.ClientGameState;
 
 import java.util.List;
 
+import top.mores.battlefield.config.BattlefieldServerConfig;
+
 public final class BattlefieldAreaRules {
     private BattlefieldAreaRules() {
     }
 
-    public static final double AREA_RADIUS_SCALE = 1.6;
-    public static final int OUTSIDE_AREA_KILL_TICKS = 200;
 
     /**
      * 只显示本方可活动区域：
@@ -44,7 +44,7 @@ public final class BattlefieldAreaRules {
             if (!isPointInMovableRange(myTeam, point.getProgress())) continue;
             double dx = x - point.x;
             double dz = z - point.z;
-            double radius = point.radius * AREA_RADIUS_SCALE;
+            double radius = point.radius * BattlefieldServerConfig.get().areaRadiusScale;
             if (dx * dx + dz * dz <= radius * radius) return true;
         }
         return false;

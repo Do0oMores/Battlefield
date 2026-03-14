@@ -8,6 +8,7 @@ import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import top.mores.battlefield.Battlefield;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CScoreToastPacket;
 import top.mores.battlefield.team.SquadManager;
@@ -21,10 +22,10 @@ public final class ScoreManager {
     private ScoreManager() {
     }
 
-    private static final int STREAK_WINDOW_TICKS = 15 * 20;
-    private static final int STREAK_KILL_BONUS = 50;
-    private static final int SQUAD_WIPE_BONUS = 200;
-    private static final int HEADSHOT_KILL_BONUS = 25;
+    
+    
+    
+    
 
     // ===== 分数与旧HUD兼容字段 =====
     private static final Map<UUID, Integer> SCORES = new HashMap<>();
@@ -40,8 +41,8 @@ public final class ScoreManager {
     }
 
     // ===== Toast 并行合并 =====
-    private static final int TOAST_MERGE_WINDOW_TICKS = 6;   // 同 reason 6 tick 内合并
-    private static final int TOAST_FLUSH_AFTER_TICKS = 12;
+    
+    
     private static final Map<UUID, Float> PRE_HURT_HEALTH = new HashMap<>();
     private static final Map<UUID, Long> PRE_HURT_TICK = new HashMap<>();
     private static final Map<UUID, Float> PRE_HURT_REMAIN = new HashMap<>();
@@ -231,7 +232,7 @@ public final class ScoreManager {
         long now = victim.serverLevel().getGameTime();
         Long hsTick = HEADSHOT_TICK.get(victim.getUUID());
         if (hsTick != null && hsTick == now) {
-            addScore(attacker, HEADSHOT_KILL_BONUS, ScoreReason.HEADSHOT);
+            addScore(attacker, BattlefieldServerConfig.get().scoreHeadshotKillBonus, ScoreReason.HEADSHOT);
             HEADSHOT_TICK.remove(victim.getUUID());
         }
         onKill(attacker, victim);
@@ -246,11 +247,11 @@ public final class ScoreManager {
         LAST_KILL_AWARD_TICK.put(victim.getUUID(), now);
 
         // 击杀基础分（你可以按需调整）
-        addScore(attacker, 100, ScoreReason.KILL);
+        addScore(attacker, BattlefieldServerConfig.get().scoreKillBase, ScoreReason.KILL);
 
         long lastKill = LAST_KILL_TICK.getOrDefault(attackerId, Long.MIN_VALUE / 4);
-        if (now - lastKill <= STREAK_WINDOW_TICKS) {
-            addScore(attacker, STREAK_KILL_BONUS, ScoreReason.STREAK);
+        if (now - lastKill <= BattlefieldServerConfig.get().scoreStreakWindowTicks) {
+            addScore(attacker, BattlefieldServerConfig.get().scoreStreakKillBonus, ScoreReason.STREAK);
         } else {
             STREAK_SQUAD_KILLS.remove(attackerId);
         }
@@ -269,8 +270,8 @@ public final class ScoreManager {
         KillWindow win = map.computeIfAbsent(key, k -> new KillWindow(new HashSet<>()));
         win.killedVictims().add(victim.getUUID());
 
-        if (win.killedVictims().size() >= SquadManager.SQUAD_CAP) {
-            addScore(attacker, SQUAD_WIPE_BONUS, ScoreReason.SQUAD_WIPE);
+        if (win.killedVictims().size() >= BattlefieldServerConfig.get().squadCap) {
+            addScore(attacker, BattlefieldServerConfig.get().scoreSquadWipeBonus, ScoreReason.SQUAD_WIPE);
             map.remove(key);
         }
     }
@@ -297,7 +298,7 @@ public final class ScoreManager {
                 PENDING_TOASTS.computeIfAbsent(playerId, k -> new EnumMap<>(ScoreReason.class));
 
         PendingToast p = map.get(reason);
-        if (p != null && (nowTick - p.lastTick) <= TOAST_MERGE_WINDOW_TICKS) {
+        if (p != null && (nowTick - p.lastTick) <= BattlefieldServerConfig.get().scoreToastMergeWindowTicks) {
             p.amount += score;
             p.lastTick = nowTick;
         } else {
@@ -339,7 +340,7 @@ public final class ScoreManager {
                 ScoreReason reason = e2.getKey();
                 PendingToast p = e2.getValue();
 
-                if ((nowTick - p.lastTick) >= TOAST_FLUSH_AFTER_TICKS) {
+                if ((nowTick - p.lastTick) >= BattlefieldServerConfig.get().scoreToastFlushAfterTicks) {
                     sendToast(level, sp, p.amount, reason);
                     it2.remove();
                 }

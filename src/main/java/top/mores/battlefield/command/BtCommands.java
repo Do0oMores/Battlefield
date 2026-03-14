@@ -7,6 +7,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.config.TaczAmmoCapConfig;
 import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.game.V1StrikeManager;
@@ -42,6 +43,7 @@ public final class BtCommands {
                             int n = BattlefieldGameManager.reloadSectors(level);
                             int arenas = BattlefieldGameManager.arenaCount();
                             TaczAmmoCapConfig.reload();
+                            BattlefieldServerConfig.reload();
                             ctx.getSource().sendSuccess(() -> Component.literal("[Battlefield] 配置热重载完成，对局数=" + arenas + "，总战线数=" + n), true);
                             return 1;
                         }))

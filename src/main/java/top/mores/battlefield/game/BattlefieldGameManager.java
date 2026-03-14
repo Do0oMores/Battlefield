@@ -25,6 +25,7 @@ import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.block.ModBlocks;
 import top.mores.battlefield.block.TaczAmmoStationBlock;
 import top.mores.battlefield.breakthrough.CapturePoint;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.net.BattlefieldNet;
@@ -42,10 +43,6 @@ import java.util.stream.Collectors;
 
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class BattlefieldGameManager {
-    private static final int TICKS_PER_SECOND = 20;
-    private static final int COUNTDOWN_SECONDS = 10;
-    private static final int ENDING_SECONDS = 10;
-
     private BattlefieldGameManager() {
     }
 
@@ -316,7 +313,7 @@ public final class BattlefieldGameManager {
             }
             enforceMovableArea(ctx);
 
-            if (ctx.tickCounter % SectorManager.CAPTURE_INTERVAL_TICKS == 0) {
+            if (ctx.tickCounter % BattlefieldServerConfig.get().captureIntervalTicks == 0) {
                 ctx.sectorManager.tick(ctx.session);
                 checkWinConditionBySector(ctx);
             }
@@ -398,7 +395,7 @@ public final class BattlefieldGameManager {
 
     private static void beginCountdown(MatchContext ctx) {
         ctx.phase = Phase.COUNTDOWN;
-        ctx.countdownTicks = COUNTDOWN_SECONDS * TICKS_PER_SECOND;
+        ctx.countdownTicks = BattlefieldServerConfig.get().gameCountdownSeconds * 20;
         ensureSession(ctx);
         forEachParticipant(ctx, sp -> teleportToTeamSpawn(ctx, sp, TeamManager.getTeam(sp)));
     }
@@ -411,7 +408,7 @@ public final class BattlefieldGameManager {
     private static void startEnding(MatchContext ctx, TeamId winner) {
         ctx.phase = Phase.ENDING;
         ctx.winner = winner;
-        ctx.endingTicks = ENDING_SECONDS * TICKS_PER_SECOND;
+        ctx.endingTicks = BattlefieldServerConfig.get().gameEndingSeconds * 20;
 
         forEachParticipant(ctx, sp -> {
             sp.getInventory().clearContent();
@@ -731,7 +728,7 @@ public final class BattlefieldGameManager {
             }
 
             int ticks = ctx.outsideAreaTicks.getOrDefault(sp.getUUID(), 0) + 1;
-            if (ticks >= BattlefieldAreaRules.OUTSIDE_AREA_KILL_TICKS) {
+            if (ticks >= BattlefieldServerConfig.get().outsideAreaKillTicks) {
                 ctx.outsideAreaTicks.remove(sp.getUUID());
                 sp.kill();
                 continue;
