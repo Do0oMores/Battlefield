@@ -80,17 +80,14 @@ public final class BackpackBridge {
      */
     public static List<ItemStack> getBackpackPreview(ServerPlayer player, int bpSlot) {
         List<ItemStack> result = new ArrayList<>();
-
         try {
             if (!ensureInit()) return result;
             if (M_SINGLE_BACKPACK_ITEMS == null || CTOR_SINGLE_BACKPACK == null) return result;
-
             Object single = CTOR_SINGLE_BACKPACK.newInstance();
             Object raw = M_SINGLE_BACKPACK_ITEMS.invoke(single, player.getUUID(), bpSlot);
             if (raw == null) return result;
 
             List<Object> bukkitItems = new ArrayList<>();
-
             // 支持 ItemStack[] / List<ItemStack> 两种返回形式
             if (raw.getClass().isArray()) {
                 int len = Array.getLength(raw);
@@ -104,7 +101,6 @@ public final class BackpackBridge {
             } else {
                 return result;
             }
-
             for (Object bukkitStack : bukkitItems) {
                 if (bukkitStack == null) continue;
                 if (isBukkitAir(bukkitStack)) continue;
