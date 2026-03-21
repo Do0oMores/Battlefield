@@ -14,6 +14,9 @@ import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.team.C2SOpenSquadPanelPacket;
 
 public final class SquadKeyMappings {
+
+    private static long lastOpenMs = 0L;
+
     private SquadKeyMappings() {
     }
 
@@ -50,10 +53,12 @@ public final class SquadKeyMappings {
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null) return;
 
-            // 有其它界面打开时不处理，避免和容器/聊天框冲突
             if (mc.screen != null) return;
 
             while (OPEN_SQUAD_PANEL.consumeClick()) {
+                long now = System.currentTimeMillis();
+                if (now - lastOpenMs < 250L) return;
+                lastOpenMs = now;
                 BattlefieldNet.sendToServer(new C2SOpenSquadPanelPacket());
             }
         }
