@@ -12,7 +12,6 @@ import top.mores.battlefield.client.ClientGameState;
 import top.mores.battlefield.client.ModSounds;
 import top.mores.battlefield.client.VoiceManager;
 import top.mores.battlefield.config.BattlefieldServerConfig;
-import top.mores.battlefield.game.BattlefieldAreaRules;
 import top.mores.battlefield.net.S2CGameStatePacket;
 
 import java.util.HashMap;

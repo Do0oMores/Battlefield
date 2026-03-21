@@ -8,6 +8,9 @@ import net.minecraftforge.network.PacketDistributor;
 import net.minecraftforge.network.simple.SimpleChannel;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.breakthrough.Sector;
+import top.mores.battlefield.net.team.C2SOpenSquadPanelPacket;
+import top.mores.battlefield.net.team.C2SSquadActionPacket;
+import top.mores.battlefield.net.team.S2CSquadPanelPacket;
 
 import java.util.List;
 
@@ -97,6 +100,31 @@ public final class BattlefieldNet {
                 S2CBackpackPreview::decode,
                 S2CBackpackPreview::handle
         );
+
+        // ===== 小队面板 =====
+        CH.registerMessage(
+                id++,
+                C2SOpenSquadPanelPacket.class,
+                C2SOpenSquadPanelPacket::encode,
+                C2SOpenSquadPanelPacket::decode,
+                C2SOpenSquadPanelPacket::handle
+        );
+
+        CH.registerMessage(
+                id++,
+                C2SSquadActionPacket.class,
+                C2SSquadActionPacket::encode,
+                C2SSquadActionPacket::decode,
+                C2SSquadActionPacket::handle
+        );
+
+        CH.registerMessage(
+                id++,
+                S2CSquadPanelPacket.class,
+                S2CSquadPanelPacket::encode,
+                S2CSquadPanelPacket::decode,
+                S2CSquadPanelPacket::handle
+        );
     }
 
     public static void sendToPlayer(ServerPlayer sp, Object pkt) {
@@ -105,6 +133,10 @@ public final class BattlefieldNet {
 
     public static void sendToAllInLevel(ServerLevel level, Object pkt) {
         CH.send(PacketDistributor.DIMENSION.with(level::dimension), pkt);
+    }
+
+    public static void sendToServer(Object pkt) {
+        CH.sendToServer(pkt);
     }
 
     public static void sendSectorAreas(ServerLevel level, int sectorIndex,
