@@ -280,9 +280,9 @@ public final class BattlefieldGameManager {
 
         TeamId team = TeamManager.getTeam(sp);
         if (team == TeamId.ATTACKERS) {
-            teleportTo(sp, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(sp, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
         } else if (team == TeamId.DEFENDERS) {
-            teleportTo(sp, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(sp, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
     }
 
@@ -647,9 +647,9 @@ public final class BattlefieldGameManager {
 
     private static void teleportToTeamSpawn(MatchContext ctx, ServerPlayer player, TeamId teamId) {
         if (teamId == TeamId.ATTACKERS) {
-            teleportTo(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
         } else if (teamId == TeamId.DEFENDERS) {
-            teleportTo(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
     }
 
@@ -687,6 +687,11 @@ public final class BattlefieldGameManager {
         if (pos == null) return;
         ServerLevel level = pos.resolveLevel(player.getServer(), fallbackLevel != null ? fallbackLevel : player.serverLevel());
         player.setRespawnPosition(level.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
+    }
+
+    private static void teleportToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
+        if (pos == null || battleLevel == null) return;
+        player.teleportTo(battleLevel, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
     }
 
     private static void forEachParticipant(MatchContext ctx, java.util.function.Consumer<ServerPlayer> action) {
