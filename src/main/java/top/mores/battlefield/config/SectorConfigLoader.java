@@ -27,6 +27,7 @@ public final class SectorConfigLoader {
 
     private static class Root {
         String areaName;
+        String templateWorld;
         String world;
         Integer time;
         Integer military;
@@ -63,7 +64,7 @@ public final class SectorConfigLoader {
 
     public static final class ArenaConfig {
         public final String areaName;
-        public final String world;
+        public final String templateWorld;
         public final int timeMinutes;
         public final int military;
         public final int addMilitary;
@@ -71,6 +72,9 @@ public final class SectorConfigLoader {
         public final int attackNumber;
         public final int defendNumber;
         public final int minPlayerNumber;
+        public final boolean useTemporaryWorld;
+        public final int preloadRadiusChunks;
+        public final String instanceWorldPrefix;
         public final Position wait;
         public final Position lobby;
         public final Position firstAttackSpawnPoint;
@@ -79,12 +83,13 @@ public final class SectorConfigLoader {
         public final List<String> loseCommand;
         public final List<Sector> sectors;
 
-        public ArenaConfig(String areaName, String world, int timeMinutes, int military, int addMilitary,
+        public ArenaConfig(String areaName, String templateWorld, int timeMinutes, int military, int addMilitary,
                            int maxPlayerNumber, int attackNumber, int defendNumber, int minPlayerNumber,
+                           boolean useTemporaryWorld, int preloadRadiusChunks, String instanceWorldPrefix,
                            Position wait, Position lobby, Position firstAttackSpawnPoint, Position firstDefendSpawnPoint,
                            List<String> winCommand, List<String> loseCommand, List<Sector> sectors) {
             this.areaName = areaName;
-            this.world = world;
+            this.templateWorld = templateWorld;
             this.timeMinutes = timeMinutes;
             this.military = military;
             this.addMilitary = addMilitary;
@@ -92,6 +97,9 @@ public final class SectorConfigLoader {
             this.attackNumber = attackNumber;
             this.defendNumber = defendNumber;
             this.minPlayerNumber = minPlayerNumber;
+            this.useTemporaryWorld = useTemporaryWorld;
+            this.preloadRadiusChunks = preloadRadiusChunks;
+            this.instanceWorldPrefix = instanceWorldPrefix;
             this.wait = wait;
             this.lobby = lobby;
             this.firstAttackSpawnPoint = firstAttackSpawnPoint;
@@ -124,6 +132,7 @@ public final class SectorConfigLoader {
     private static class ArenaJson {
         String areaName;
         String id;
+        String templateWorld;
         String world;
         Integer time;
         Integer military;
@@ -132,6 +141,9 @@ public final class SectorConfigLoader {
         Integer attackNumber;
         Integer defendNumber;
         Integer minPlayerNumber;
+        Boolean useTemporaryWorld;
+        Integer preloadRadiusChunks;
+        String instanceWorldPrefix;
         PositionJson wait;
         PositionJson lobby;
         PositionJson firstAttackSpawnPoint;
@@ -222,7 +234,7 @@ public final class SectorConfigLoader {
     }
 
     private static ArenaConfig parseArena(String areaName, ArenaJson arena, Root rootFallback) {
-        String world = "minecraft:overworld";
+        String templateWorld = "minecraft:overworld";
         int timeMinutes = 20;
         int military = 300;
         int addMilitary = 0;
@@ -230,6 +242,9 @@ public final class SectorConfigLoader {
         int attackNumber;
         int defendNumber;
         int minPlayerNumber = 2;
+        boolean useTemporaryWorld = true;
+        int preloadRadiusChunks = 6;
+        String instanceWorldPrefix = "bf_inst";
 
         Position wait = new Position("minecraft:overworld", 0.5, 64, 0.5);
         Position lobby = new Position("minecraft:overworld", 0.5, 64, 0.5);
@@ -239,12 +254,17 @@ public final class SectorConfigLoader {
         List<String> loseCommand = Collections.emptyList();
         List<Sector> sectors;
 
-        world = read(arena == null ? null : arena.world, rootFallback == null ? null : rootFallback.world, world);
+        String preferredTemplateWorld = arena == null ? null : firstNonBlank(arena.templateWorld, arena.world);
+        String fallbackTemplateWorld = rootFallback == null ? null : firstNonBlank(rootFallback.templateWorld, rootFallback.world);
+        templateWorld = read(preferredTemplateWorld, fallbackTemplateWorld, templateWorld);
         timeMinutes = readPositive(arena == null ? null : arena.time, rootFallback == null ? null : rootFallback.time, timeMinutes);
         military = readPositive(arena == null ? null : arena.military, rootFallback == null ? null : rootFallback.military, military);
         addMilitary = readNonNegative(arena == null ? null : arena.addMilitary, rootFallback == null ? null : rootFallback.addMilitary, addMilitary);
         maxPlayerNumber = readPositive(arena == null ? null : arena.maxPlayerNumber, rootFallback == null ? null : rootFallback.maxPlayerNumber, maxPlayerNumber);
         minPlayerNumber = Math.max(2, readPositive(arena == null ? null : arena.minPlayerNumber, rootFallback == null ? null : rootFallback.minPlayerNumber, minPlayerNumber));
+        useTemporaryWorld = readBoolean(arena == null ? null : arena.useTemporaryWorld, rootFallback == null ? null : null, useTemporaryWorld);
+        preloadRadiusChunks = Math.max(0, readNonNegative(arena == null ? null : arena.preloadRadiusChunks, rootFallback == null ? null : null, preloadRadiusChunks));
+        instanceWorldPrefix = read(arena == null ? null : arena.instanceWorldPrefix, rootFallback == null ? null : null, instanceWorldPrefix);
 
         attackNumber = Math.max(1, maxPlayerNumber / 2);
         defendNumber = Math.max(1, maxPlayerNumber - attackNumber);
@@ -268,8 +288,14 @@ public final class SectorConfigLoader {
         if (sectorJson == null && rootFallback != null) sectorJson = rootFallback.sectors;
         sectors = parseSectors(sectorJson);
 
-        return new ArenaConfig(areaName, world, timeMinutes, military, addMilitary, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
+        return new ArenaConfig(areaName, templateWorld, timeMinutes, military, addMilitary, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
+                useTemporaryWorld, preloadRadiusChunks, instanceWorldPrefix,
                 wait, lobby, firstAttackSpawnPoint, firstDefendSpawnPoint, winCommand, loseCommand, sectors);
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) return first;
+        return second;
     }
 
     private static String read(String preferred, String fallback, String def) {
@@ -287,6 +313,12 @@ public final class SectorConfigLoader {
     private static int readNonNegative(Integer preferred, Integer fallback, int def) {
         if (preferred != null && preferred >= 0) return preferred;
         if (fallback != null && fallback >= 0) return fallback;
+        return def;
+    }
+
+    private static boolean readBoolean(Boolean preferred, Boolean fallback, boolean def) {
+        if (preferred != null) return preferred;
+        if (fallback != null) return fallback;
         return def;
     }
 
@@ -353,7 +385,10 @@ public final class SectorConfigLoader {
         root.arenas = new ArrayList<>();
         ArenaJson arena = new ArenaJson();
         arena.areaName = "area_alpha";
-        arena.world = "minecraft:world";
+        arena.templateWorld = "minecraft:world";
+        arena.useTemporaryWorld = true;
+        arena.preloadRadiusChunks = 6;
+        arena.instanceWorldPrefix = "bf_inst";
         arena.time = 20;
         arena.military = 300;
         arena.addMilitary = 100;
