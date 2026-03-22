@@ -2,7 +2,10 @@
   "arenas": [
     {
       "areaName": "area_alpha",
-      "world": "minecraft:world",
+      "templateWorld": "minecraft:world",
+      "useTemporaryWorld": true,
+      "preloadRadiusChunks": 6,
+      "instanceWorldPrefix": "bf_inst",
       "time": 20,
       "military": 300,
       "addMilitary": 100,
@@ -80,7 +83,10 @@
     },
     {
       "areaName": "area_bravo",
-      "world": "minecraft:world",
+      "templateWorld": "minecraft:world",
+      "useTemporaryWorld": true,
+      "preloadRadiusChunks": 6,
+      "instanceWorldPrefix": "bf_inst",
       "time": 20,
       "military": 300,
       "addMilitary": 100,

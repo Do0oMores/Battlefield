@@ -31,6 +31,7 @@ import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CGameStatePacket;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
+import top.mores.battlefield.server.BattleInstanceWorldService;
 import top.mores.battlefield.server.BombardmentManager;
 import top.mores.battlefield.server.MohistTeleport;
 import top.mores.battlefield.team.SquadManager;
@@ -60,6 +61,7 @@ public final class BattlefieldGameManager {
     private static final class MatchContext {
         final String arenaId;
         SectorConfigLoader.ArenaConfig arena;
+        ServerLevel templateLevel;
         ServerLevel battleLevel;
         final SectorManager sectorManager = new SectorManager();
         final Map<UUID, Integer> outsideAreaTicks = new HashMap<>();
@@ -73,9 +75,10 @@ public final class BattlefieldGameManager {
         int countdownTicks = 0;
         int endingTicks = 0;
 
-        MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel battleLevel) {
+        MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel templateLevel, ServerLevel battleLevel) {
             this.arenaId = arenaId;
             this.arena = arena;
+            this.templateLevel = templateLevel;
             this.battleLevel = battleLevel;
         }
     }
@@ -88,14 +91,17 @@ public final class BattlefieldGameManager {
 
         Map<String, MatchContext> next = new HashMap<>();
         for (var arena : config.arenas.values()) {
-            ServerLevel level = resolveBattleLevel(defaultLevel, arena.world);
-            if (level == null) continue;
+            ServerLevel templateLevel = resolveBattleLevel(defaultLevel, arena.templateWorld);
+            if (templateLevel == null) continue;
             MatchContext old = MATCHES.get(arena.areaName);
             MatchContext ctx = old != null
                     ? old
-                    : new MatchContext(arena.areaName, arena, level);
+                    : new MatchContext(arena.areaName, arena, templateLevel, templateLevel);
             ctx.arena = arena;
-            ctx.battleLevel = level;
+            ctx.templateLevel = templateLevel;
+            if (ctx.session == null || !ctx.arena.useTemporaryWorld) {
+                ctx.battleLevel = templateLevel;
+            }
             syncSessionWithConfig(ctx);
             next.put(arena.areaName, ctx);
         }
@@ -213,6 +219,7 @@ public final class BattlefieldGameManager {
         PLAYER_AMMO_STATIONS.clear();
         config = null;
         BombardmentManager.clearAll();
+        BattleInstanceWorldService.releaseAll();
     }
 
     @SubscribeEvent
@@ -273,9 +280,9 @@ public final class BattlefieldGameManager {
 
         TeamId team = TeamManager.getTeam(sp);
         if (team == TeamId.ATTACKERS) {
-            teleportTo(sp, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(sp, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
         } else if (team == TeamId.DEFENDERS) {
-            teleportTo(sp, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(sp, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
     }
 
@@ -396,6 +403,7 @@ public final class BattlefieldGameManager {
     private static void beginCountdown(MatchContext ctx) {
         ctx.phase = Phase.COUNTDOWN;
         ctx.countdownTicks = BattlefieldServerConfig.get().gameCountdownSeconds * 20;
+        prepareBattleWorld(ctx);
         ensureSession(ctx);
         forEachParticipant(ctx, sp -> teleportToTeamSpawn(ctx, sp, TeamManager.getTeam(sp)));
     }
@@ -432,6 +440,7 @@ public final class BattlefieldGameManager {
     }
 
     private static void resetMatch(MatchContext ctx) {
+        BattleInstanceWorldService.releaseInstance(ctx.battleLevel, ctx.arena);
         ctx.session = null;
         ctx.phase = Phase.WAITING;
         ctx.winner = TeamId.SPECTATOR;
@@ -443,6 +452,7 @@ public final class BattlefieldGameManager {
         ctx.participants.clear();
         ScoreManager.reset();
         ctx.pendingEndWinner = null;
+        ctx.battleLevel = ctx.templateLevel;
     }
 
     private static void sendClientReset(ServerPlayer sp) {
@@ -637,9 +647,9 @@ public final class BattlefieldGameManager {
 
     private static void teleportToTeamSpawn(MatchContext ctx, ServerPlayer player, TeamId teamId) {
         if (teamId == TeamId.ATTACKERS) {
-            teleportTo(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
         } else if (teamId == TeamId.DEFENDERS) {
-            teleportTo(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
     }
 
@@ -677,6 +687,11 @@ public final class BattlefieldGameManager {
         if (pos == null) return;
         ServerLevel level = pos.resolveLevel(player.getServer(), fallbackLevel != null ? fallbackLevel : player.serverLevel());
         player.setRespawnPosition(level.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
+    }
+
+    private static void teleportToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
+        if (pos == null || battleLevel == null) return;
+        player.teleportTo(battleLevel, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
     }
 
     private static void forEachParticipant(MatchContext ctx, java.util.function.Consumer<ServerPlayer> action) {
@@ -750,12 +765,29 @@ public final class BattlefieldGameManager {
 
         var arena = config.getArena(arenaId);
         if (arena == null) return null;
-        ServerLevel level = resolveBattleLevel(defaultLevel, arena.world);
-        if (level == null) return null;
+        ServerLevel templateLevel = resolveBattleLevel(defaultLevel, arena.templateWorld);
+        if (templateLevel == null) return null;
 
-        MatchContext created = new MatchContext(arena.areaName, arena, level);
+        MatchContext created = new MatchContext(arena.areaName, arena, templateLevel, templateLevel);
         MATCHES.put(arena.areaName, created);
         return created;
+    }
+
+    private static void prepareBattleWorld(MatchContext ctx) {
+        if (ctx.session != null) return;
+        if (!ctx.arena.useTemporaryWorld) {
+            ctx.battleLevel = ctx.templateLevel;
+            BattleInstanceWorldService.preloadChunks(ctx.battleLevel, ctx.arena);
+            return;
+        }
+
+        ServerLevel instance = BattleInstanceWorldService.createInstance(ctx.templateLevel, ctx.arenaId, ctx.arena);
+        if (instance != null) {
+            ctx.battleLevel = instance;
+        } else {
+            ctx.battleLevel = ctx.templateLevel;
+        }
+        BattleInstanceWorldService.preloadChunks(ctx.battleLevel, ctx.arena);
     }
 
     public static int reloadSectors(ServerLevel level) {
