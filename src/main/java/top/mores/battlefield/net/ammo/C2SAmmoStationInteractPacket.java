@@ -1,4 +1,4 @@
-package top.mores.battlefield.net;
+package top.mores.battlefield.net.ammo;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;

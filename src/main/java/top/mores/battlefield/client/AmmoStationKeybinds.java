@@ -16,7 +16,7 @@ import org.lwjgl.glfw.GLFW;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.block.TaczAmmoStationBlock;
 import top.mores.battlefield.net.BattlefieldNet;
-import top.mores.battlefield.net.C2SAmmoStationInteractPacket;
+import top.mores.battlefield.net.ammo.C2SAmmoStationInteractPacket;
 
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public final class AmmoStationKeybinds {

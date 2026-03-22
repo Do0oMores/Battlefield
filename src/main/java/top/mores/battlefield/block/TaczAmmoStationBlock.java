@@ -24,7 +24,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.NotNull;
 import top.mores.battlefield.config.TaczAmmoCapConfig;
 import top.mores.battlefield.net.BattlefieldNet;
-import top.mores.battlefield.net.S2CAmmoStationCooldownPacket;
+import top.mores.battlefield.net.ammo.S2CAmmoStationCooldownPacket;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
