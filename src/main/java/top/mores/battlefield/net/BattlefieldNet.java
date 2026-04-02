@@ -65,6 +65,14 @@ public final class BattlefieldNet {
 
         CH.registerMessage(
                 id++,
+                S2COpenDeployScreenPacket.class,
+                S2COpenDeployScreenPacket::encode,
+                S2COpenDeployScreenPacket::decode,
+                S2COpenDeployScreenPacket::handle
+        );
+
+        CH.registerMessage(
+                id++,
                 C2SDeployRequest.class,
                 C2SDeployRequest::encode,
                 C2SDeployRequest::decode,
