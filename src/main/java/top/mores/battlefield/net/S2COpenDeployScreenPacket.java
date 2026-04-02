@@ -1,9 +1,10 @@
 package top.mores.battlefield.net;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import top.mores.battlefield.client.ui.RespawnDeployScreen;
+import top.mores.battlefield.client.net.BattlefieldClientPackets;
 
 import java.util.function.Supplier;
 
@@ -17,12 +18,8 @@ public final class S2COpenDeployScreenPacket {
 
     public static void handle(S2COpenDeployScreenPacket msg, Supplier<NetworkEvent.Context> ctxSup) {
         NetworkEvent.Context ctx = ctxSup.get();
-        ctx.enqueueWork(() -> {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc.player == null) return;
-            if (mc.screen != null) return;
-            mc.setScreen(new RespawnDeployScreen());
-        });
+        ctx.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                () -> () -> BattlefieldClientPackets.handleOpenDeployScreen(msg)));
         ctx.setPacketHandled(true);
     }
 }
