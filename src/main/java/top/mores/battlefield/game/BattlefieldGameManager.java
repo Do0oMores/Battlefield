@@ -30,6 +30,7 @@ import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CGameStatePacket;
+import top.mores.battlefield.net.S2COpenDeployScreenPacket;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
 import top.mores.battlefield.server.BattleInstanceWorldService;
 import top.mores.battlefield.server.BombardmentManager;
@@ -277,13 +278,8 @@ public final class BattlefieldGameManager {
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
         MatchContext ctx = findContext(sp.getUUID());
         if (ctx == null) return;
-
-        TeamId team = TeamManager.getTeam(sp);
-        if (team == TeamId.ATTACKERS) {
-            teleportToBattleLevel(sp, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
-        } else if (team == TeamId.DEFENDERS) {
-            teleportToBattleLevel(sp, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
-        }
+        if (ctx.phase != Phase.RUNNING) return;
+        BattlefieldNet.sendToPlayer(sp, new S2COpenDeployScreenPacket());
     }
 
     @SubscribeEvent
@@ -297,6 +293,7 @@ public final class BattlefieldGameManager {
 
     private static void tickMatch(MatchContext ctx) {
         ctx.tickCounter++;
+        forEachParticipant(ctx, BattlefieldGameManager::keepPlayerFed);
 
         if (ctx.phase == Phase.COUNTDOWN) {
             enforceFrozenPhaseMovement(ctx);
@@ -648,9 +645,29 @@ public final class BattlefieldGameManager {
     private static void teleportToTeamSpawn(MatchContext ctx, ServerPlayer player, TeamId teamId) {
         if (teamId == TeamId.ATTACKERS) {
             teleportToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
+            setRespawnToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
         } else if (teamId == TeamId.DEFENDERS) {
             teleportToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+            setRespawnToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
+    }
+
+    public static void handleDeployRequest(ServerPlayer player, int spawnIndex) {
+        MatchContext ctx = findContext(player.getUUID());
+        if (ctx == null || ctx.phase != Phase.RUNNING) {
+            var level = player.serverLevel();
+            var pos = level.getSharedSpawnPos();
+            player.teleportTo(level, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5, player.getYRot(), player.getXRot());
+            return;
+        }
+
+        TeamId team = TeamManager.getTeam(player);
+        if (spawnIndex == 0) {
+            teleportToTeamSpawn(ctx, player, team);
+            return;
+        }
+
+        teleportToTeamSpawn(ctx, player, team);
     }
 
     private static void ensureConfig(ServerLevel defaultLevel) {
@@ -694,6 +711,11 @@ public final class BattlefieldGameManager {
         player.teleportTo(battleLevel, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
     }
 
+    private static void setRespawnToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
+        if (pos == null || battleLevel == null) return;
+        player.setRespawnPosition(battleLevel.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
+    }
+
     private static void forEachParticipant(MatchContext ctx, java.util.function.Consumer<ServerPlayer> action) {
         if (ctx.battleLevel.getServer() == null) return;
         List<ServerPlayer> players = ctx.participants.stream()
@@ -701,6 +723,13 @@ public final class BattlefieldGameManager {
                 .filter(Objects::nonNull)
                 .toList();
         players.forEach(action);
+    }
+
+    private static void keepPlayerFed(ServerPlayer sp) {
+        var food = sp.getFoodData();
+        food.setFoodLevel(20);
+        food.setSaturation(20.0F);
+        food.setExhaustion(0.0F);
     }
 
     private static String participantNames(MatchContext ctx, TeamId teamId) {
