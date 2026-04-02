@@ -1,11 +1,10 @@
 package top.mores.battlefield.net.team;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import top.mores.battlefield.team.ui.TeamHud;
+import top.mores.battlefield.client.net.BattlefieldClientPackets;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -69,21 +68,8 @@ public record S2CSquadPanelPacket(SquadPanelView view) {
 
     public static void handle(S2CSquadPanelPacket msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() ->
-                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> ClientHandler.handle(msg))
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> BattlefieldClientPackets.handleSquadPanel(msg))
         );
         ctx.get().setPacketHandled(true);
-    }
-
-    private static final class ClientHandler {
-        private static void handle(S2CSquadPanelPacket msg) {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc == null) return;
-
-            if (mc.screen instanceof TeamHud hud) {
-                hud.applySnapshot(msg.view);
-            } else {
-                mc.setScreen(new TeamHud(msg.view));
-            }
-        }
     }
 }

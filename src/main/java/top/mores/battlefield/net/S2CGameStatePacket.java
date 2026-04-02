@@ -1,9 +1,10 @@
 package top.mores.battlefield.net;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import top.mores.battlefield.client.ClientGameState;
+import top.mores.battlefield.client.net.BattlefieldClientPackets;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -148,14 +149,8 @@ public class S2CGameStatePacket {
     }
 
     public static void handle(S2CGameStatePacket msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (Minecraft.getInstance().player != null) {
-                ClientGameState.update(msg.inBattle, msg.myTeam, msg.attackerTickets, msg.defenderTickets,
-                        msg.remainingTimeTicks, msg.myScore, msg.myLastBonus,
-                        msg.squadPlayerIds, msg.squadPlayerScores, msg.squadTotalScore,
-                        msg.points, msg.phase, msg.overlayTitle, msg.overlaySub, msg.overlayTicks);
-            }
-        });
+        ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                () -> () -> BattlefieldClientPackets.handleGameState(msg)));
         ctx.get().setPacketHandled(true);
     }
 }

@@ -1,10 +1,11 @@
 package top.mores.battlefield.net;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import top.mores.battlefield.client.DeployPreviewClientState;
+import top.mores.battlefield.client.net.BattlefieldClientPackets;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,9 +40,16 @@ public class S2CBackpackPreview {
 
     public static void handle(S2CBackpackPreview msg, Supplier<NetworkEvent.Context> ctxSup) {
         NetworkEvent.Context ctx = ctxSup.get();
-        ctx.enqueueWork(() -> Minecraft.getInstance().execute(() ->
-                DeployPreviewClientState.putPreview(msg.bpSlot, msg.items)
-        ));
+        ctx.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                () -> () -> BattlefieldClientPackets.handleBackpackPreview(msg)));
         ctx.setPacketHandled(true);
+    }
+
+    public int bpSlot() {
+        return bpSlot;
+    }
+
+    public List<ItemStack> items() {
+        return items;
     }
 }

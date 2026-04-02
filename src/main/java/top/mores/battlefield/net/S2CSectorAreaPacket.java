@@ -1,9 +1,10 @@
 package top.mores.battlefield.net;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import top.mores.battlefield.client.ClientGameState;
+import top.mores.battlefield.client.net.BattlefieldClientPackets;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -72,11 +73,8 @@ public class S2CSectorAreaPacket {
     }
 
     public static void handle(S2CSectorAreaPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        ctx.get().enqueueWork(() -> {
-            if (Minecraft.getInstance().player != null) {
-                ClientGameState.updateAreas(msg.sectorIndex, msg.attackerAreas, msg.defenderAreas);
-            }
-        });
+        ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                () -> () -> BattlefieldClientPackets.handleSectorAreas(msg)));
         ctx.get().setPacketHandled(true);
     }
 }
