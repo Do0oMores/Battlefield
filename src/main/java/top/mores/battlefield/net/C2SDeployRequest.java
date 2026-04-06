@@ -3,6 +3,7 @@ package top.mores.battlefield.net;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
+import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.server.BackpackBridge;
 
 import java.util.function.Supplier;
@@ -36,10 +37,7 @@ public final class C2SDeployRequest {
 
             if (msg.bpSlot < 1 || msg.bpSlot > 9) return;
 
-            var level = sp.serverLevel();
-            var pos = level.getSharedSpawnPos(); // 世界出生点
-            sp.teleportTo(level, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5, sp.getYRot(), sp.getXRot());
-
+            BattlefieldGameManager.handleDeployRequest(sp, msg.spawnIndex);
             BackpackBridge.applyBackpackPreset(sp, msg.bpSlot);
         });
         ctx.setPacketHandled(true);
