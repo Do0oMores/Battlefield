@@ -29,6 +29,7 @@ import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CGameStatePacket;
+import top.mores.battlefield.net.S2COpenDeployScreenPacket;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
 import top.mores.battlefield.server.BombardmentManager;
 import top.mores.battlefield.server.MohistTeleport;
@@ -276,6 +277,7 @@ public final class BattlefieldGameManager {
         } else if (team == TeamId.DEFENDERS) {
             teleportTo(sp, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
+        BattlefieldNet.sendToPlayer(sp, new S2COpenDeployScreenPacket());
     }
 
     @SubscribeEvent
@@ -403,6 +405,7 @@ public final class BattlefieldGameManager {
     private static void startRunningMatch(MatchContext ctx) {
         ctx.phase = Phase.RUNNING;
         ctx.pendingEndWinner = null;
+        forEachParticipant(ctx, sp -> BattlefieldNet.sendToPlayer(sp, new S2COpenDeployScreenPacket()));
     }
 
     private static void startEnding(MatchContext ctx, TeamId winner) {
