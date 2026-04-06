@@ -59,7 +59,6 @@ public final class BattlefieldGameManager {
     private static final class MatchContext {
         final String arenaId;
         SectorConfigLoader.ArenaConfig arena;
-        ServerLevel templateLevel;
         ServerLevel battleLevel;
         final SectorManager sectorManager = new SectorManager();
         final Map<UUID, Integer> outsideAreaTicks = new HashMap<>();
@@ -73,10 +72,9 @@ public final class BattlefieldGameManager {
         int countdownTicks = 0;
         int endingTicks = 0;
 
-        MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel templateLevel, ServerLevel battleLevel) {
+        MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel battleLevel) {
             this.arenaId = arenaId;
             this.arena = arena;
-            this.templateLevel = templateLevel;
             this.battleLevel = battleLevel;
         }
     }
