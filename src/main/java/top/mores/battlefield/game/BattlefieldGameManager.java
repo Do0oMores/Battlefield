@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.level.GameType;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.scores.Team;
@@ -63,6 +64,7 @@ public final class BattlefieldGameManager {
         ServerLevel battleLevel;
         final SectorManager sectorManager = new SectorManager();
         final Map<UUID, Integer> outsideAreaTicks = new HashMap<>();
+        final Map<UUID, Vec3> frozenAnchors = new HashMap<>();
         final Set<UUID> participants = new HashSet<>();
 
         GameSession session;
@@ -336,9 +338,10 @@ public final class BattlefieldGameManager {
 
     private static void enforceFrozenPhaseMovement(MatchContext ctx) {
         forEachParticipant(ctx, sp -> {
+            Vec3 anchor = ctx.frozenAnchors.computeIfAbsent(sp.getUUID(), id -> sp.position());
             sp.setDeltaMovement(0, 0, 0);
-            if (sp.getX() != sp.xo || sp.getY() != sp.yo || sp.getZ() != sp.zo) {
-                sp.teleportTo(sp.serverLevel(), sp.xo, sp.yo, sp.zo, sp.getYRot(), sp.getXRot());
+            if (sp.distanceToSqr(anchor.x, anchor.y, anchor.z) > 0.01D) {
+                sp.teleportTo(sp.serverLevel(), anchor.x, anchor.y, anchor.z, sp.getYRot(), sp.getXRot());
             }
         });
     }
@@ -399,12 +402,19 @@ public final class BattlefieldGameManager {
         ctx.phase = Phase.COUNTDOWN;
         ctx.countdownTicks = BattlefieldServerConfig.get().gameCountdownSeconds * 20;
         ensureSession(ctx);
-        forEachParticipant(ctx, sp -> teleportToTeamSpawn(ctx, sp, TeamManager.getTeam(sp)));
+        ctx.frozenAnchors.clear();
+        forEachParticipant(ctx, sp -> {
+            teleportToTeamSpawn(ctx, sp, TeamManager.getTeam(sp));
+            ctx.frozenAnchors.put(sp.getUUID(), sp.position());
+        });
+        syncCurrentSectorAreasToParticipants(ctx);
     }
 
     private static void startRunningMatch(MatchContext ctx) {
         ctx.phase = Phase.RUNNING;
         ctx.pendingEndWinner = null;
+        ctx.frozenAnchors.clear();
+        syncCurrentSectorAreasToParticipants(ctx);
         forEachParticipant(ctx, sp -> BattlefieldNet.sendToPlayer(sp, new S2COpenDeployScreenPacket()));
     }
 
@@ -413,10 +423,12 @@ public final class BattlefieldGameManager {
         ctx.winner = winner;
         ctx.endingTicks = BattlefieldServerConfig.get().gameEndingSeconds * 20;
 
+        ctx.frozenAnchors.clear();
         forEachParticipant(ctx, sp -> {
             sp.getInventory().clearContent();
             sp.setGameMode(GameType.ADVENTURE);
             sp.setDeltaMovement(0, 0, 0);
+            ctx.frozenAnchors.put(sp.getUUID(), sp.position());
         });
     }
 
@@ -441,6 +453,7 @@ public final class BattlefieldGameManager {
         ctx.countdownTicks = 0;
         ctx.endingTicks = 0;
         ctx.outsideAreaTicks.clear();
+        ctx.frozenAnchors.clear();
         ctx.participants.forEach(ScoreManager::clearPlayer);
         ctx.participants.forEach(PLAYER_MATCH::remove);
         ctx.participants.clear();
@@ -465,10 +478,22 @@ public final class BattlefieldGameManager {
         if (ctx.session != null) return;
         GameSession s = new GameSession(ctx.battleLevel, copySectors(ctx.arena.sectors), ctx.arena.military, ctx.arena.addMilitary, ctx.arena.timeMinutes);
         ctx.session = s;
-        Sector cur = s.currentSector();
-        if (cur != null) {
-            BattlefieldNet.sendSectorAreas(ctx.session.level, ctx.session.currentSectorIndex, cur.attackerAreas, cur.defenderAreas);
-        }
+        syncCurrentSectorAreasToParticipants(ctx);
+    }
+
+    private static void syncCurrentSectorAreasToParticipants(MatchContext ctx) {
+        if (ctx.session == null) return;
+        Sector cur = ctx.session.currentSector();
+        if (cur == null) return;
+
+        var atk = cur.attackerAreas.stream()
+                .map(c -> new S2CSectorAreaPacket.AreaRect(c.x1(), c.z1(), c.x2(), c.z2()))
+                .toList();
+        var def = cur.defenderAreas.stream()
+                .map(c -> new S2CSectorAreaPacket.AreaRect(c.x1(), c.z1(), c.x2(), c.z2()))
+                .toList();
+        var pkt = new S2CSectorAreaPacket(ctx.session.currentSectorIndex, atk, def);
+        forEachParticipant(ctx, sp -> BattlefieldNet.sendToPlayer(sp, pkt));
     }
 
     private static List<Sector> copySectors(List<Sector> sectors) {
@@ -640,11 +665,11 @@ public final class BattlefieldGameManager {
 
     private static void teleportToTeamSpawn(MatchContext ctx, ServerPlayer player, TeamId teamId) {
         if (teamId == TeamId.ATTACKERS) {
-            teleportToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
-            setRespawnToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
+            teleportTo(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
+            setRespawn(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
         } else if (teamId == TeamId.DEFENDERS) {
-            teleportToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
-            setRespawnToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+            teleportTo(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+            setRespawn(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
     }
 
@@ -700,16 +725,6 @@ public final class BattlefieldGameManager {
         if (pos == null) return;
         ServerLevel level = pos.resolveLevel(player.getServer(), fallbackLevel != null ? fallbackLevel : player.serverLevel());
         player.setRespawnPosition(level.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
-    }
-
-    private static void teleportToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
-        if (pos == null || battleLevel == null) return;
-        player.teleportTo(battleLevel, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
-    }
-
-    private static void setRespawnToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
-        if (pos == null || battleLevel == null) return;
-        player.setRespawnPosition(battleLevel.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
     }
 
     private static void forEachParticipant(MatchContext ctx, java.util.function.Consumer<ServerPlayer> action) {
