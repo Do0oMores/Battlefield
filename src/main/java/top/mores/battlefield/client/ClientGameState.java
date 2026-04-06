@@ -73,6 +73,7 @@ public final class ClientGameState {
                               List<S2CGameStatePacket.PointInfo> pts,
                               int phase0, String overlayTitle0, String overlaySub0, int overlayTicks0) {
         int prevMyScore = myScore;
+        int prevPhase=phase;
         inBattle = inBattle0;
 
         if (!inBattle) {
@@ -104,6 +105,14 @@ public final class ClientGameState {
         overlaySub = overlaySub0 == null ? "" : overlaySub0;
         overlayTicks = overlayTicks0;
         deltaProgressById.clear();
+
+        if (prevPhase != phase && phase == 2 && myTeam <= 1) {
+            if (myTeam == 0) {
+                VoiceManager.play(ModSounds.VOICE_ATTACK_PUSH.get());
+            } else {
+                VoiceManager.play(ModSounds.VOICE_DEFEND_PUSH.get());
+            }
+        }
 
         for (S2CGameStatePacket.PointInfo p : pts) {
             Integer last = lastProgressById.put(p.id, p.progress);

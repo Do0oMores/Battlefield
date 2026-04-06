@@ -20,30 +20,16 @@ public final class SquadManager {
         return SquadSavedData.get(p.serverLevel()).mapFor(team).getOrDefault(p.getUUID(), 0);
     }
 
-    public static UUID buildSquadUuid(String matchId, TeamId team, int squadId) {
+    public static UUID getSquadUuid(ServerPlayer p) {
+        TeamId team = TeamManager.getTeam(p);
+        int squadId = getSquad(p);
         if (team == TeamId.SPECTATOR || squadId <= 0) return null;
+
+        String matchId = BattlefieldGameManager.getPlayerAreaName(p.getUUID());
         if (matchId == null || matchId.isBlank()) return null;
 
         String key = matchId + ":" + team.name() + ":" + squadId;
         return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
-    }
-
-    public static UUID getSquadUuid(ServerPlayer p) {
-        TeamId team = TeamManager.getTeam(p);
-        int squadId = getSquad(p);
-        String matchId = BattlefieldGameManager.getPlayerAreaName(p.getUUID());
-        return buildSquadUuid(matchId, team, squadId);
-    }
-
-    public static int getSquadScore(ServerPlayer p) {
-        return SquadScoreManager.getScore(getSquadUuid(p));
-    }
-
-    private static void clearSquadScoreIfEmpty(Map<UUID, Integer> map, int oldSquadId, UUID oldSquadUuid) {
-        if (oldSquadId <= 0 || oldSquadUuid == null) return;
-        if (!squadExists(map, oldSquadId)) {
-            SquadScoreManager.clearSquad(oldSquadUuid);
-        }
     }
 
     public static int getSquad(ServerLevel level, UUID playerId, TeamId team) {
@@ -61,6 +47,7 @@ public final class SquadManager {
         return list;
     }
 
+    /** 创建一个“新小队”并加入；若已有小队则自动离开原小队 */
     public static boolean createSquad(ServerPlayer p) {
         TeamId team = TeamManager.getTeam(p);
         if (team == TeamId.SPECTATOR) return false;
@@ -70,9 +57,8 @@ public final class SquadManager {
         Map<UUID, Integer> map = data.mapFor(team);
 
         int current = map.getOrDefault(p.getUUID(), 0);
-        String matchId = BattlefieldGameManager.getPlayerAreaName(p.getUUID());
-        UUID oldSquadUuid = buildSquadUuid(matchId, team, current);
 
+        // 必须找“不是当前小队”的空闲 squadId，才算真正创建新小队
         int newSquadId = 0;
         int teamSquadCap = BattlefieldServerConfig.get().teamSquadCap;
         for (int i = 1; i <= teamSquadCap; i++) {
@@ -87,13 +73,13 @@ public final class SquadManager {
             return false;
         }
 
+        // 直接覆盖 = 自动离开原小队
         map.put(p.getUUID(), newSquadId);
         data.setDirty();
-
-        clearSquadScoreIfEmpty(map, current, oldSquadUuid);
         return true;
     }
 
+    /** 加入指定小队；若当前在其它小队，会自动离开原小队 */
     public static boolean joinSquad(ServerPlayer p, int squadId) {
         TeamId team = TeamManager.getTeam(p);
         if (team == TeamId.SPECTATOR) return false;
@@ -105,19 +91,15 @@ public final class SquadManager {
 
         int current = map.getOrDefault(p.getUUID(), 0);
         if (current == squadId) {
-            return true;
+            return true; // 已在该小队，视为成功
         }
 
         if (!squadExists(map, squadId)) return false;
         if (countMembers(map, squadId) >= BattlefieldServerConfig.get().squadCap) return false;
 
-        String matchId = BattlefieldGameManager.getPlayerAreaName(p.getUUID());
-        UUID oldSquadUuid = buildSquadUuid(matchId, team, current);
-
+        // 直接覆盖 = 自动离开原小队
         map.put(p.getUUID(), squadId);
         data.setDirty();
-
-        clearSquadScoreIfEmpty(map, current, oldSquadUuid);
         return true;
     }
 
@@ -170,7 +152,6 @@ public final class SquadManager {
     public static void resetForMatchStart(ServerLevel level) {
         SquadSavedData data = SquadSavedData.get(level);
         data.clearAll();
-        SquadScoreManager.clearAll(); // 新增
 
         for (ServerPlayer sp : level.getServer().getPlayerList().getPlayers()) {
             if (sp.serverLevel() != level) continue;
@@ -182,7 +163,6 @@ public final class SquadManager {
 
     public static void clearAll(ServerLevel level) {
         SquadSavedData.get(level).clearAll();
-        SquadScoreManager.clearAll();
     }
 
     /** UI 用：当前阵营已有的小队 ID */
@@ -223,18 +203,14 @@ public final class SquadManager {
     private static void removeFromTeamSquad(ServerLevel level, UUID uuid, TeamId team) {
         SquadSavedData data = SquadSavedData.get(level);
         Map<UUID, Integer> map = data.mapFor(team);
-
-        int oldSquadId = map.getOrDefault(uuid, 0);
-        String matchId = BattlefieldGameManager.getPlayerAreaName(uuid);
-        UUID oldSquadUuid = buildSquadUuid(matchId, team, oldSquadId);
-
-        Integer removed = map.remove(uuid);
-        data.setDirty();
-
-        if (removed == null || removed <= 0) {
+        Integer squadId = map.remove(uuid);
+        if (squadId == null || squadId <= 0) {
+            data.setDirty();
             return;
         }
-        clearSquadScoreIfEmpty(map, removed, oldSquadUuid);
+
+        // map.remove 后如果这个 squadId 没人引用了，则自然“删除”
+        data.setDirty();
     }
 
     private static int firstFreeSquadId(Map<UUID, Integer> map) {

@@ -23,7 +23,6 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.block.ModBlocks;
-import top.mores.battlefield.block.TaczAmmoStationBlock;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.breakthrough.Sector;
@@ -60,6 +59,7 @@ public final class BattlefieldGameManager {
     private static final class MatchContext {
         final String arenaId;
         SectorConfigLoader.ArenaConfig arena;
+        ServerLevel templateLevel;
         ServerLevel battleLevel;
         final SectorManager sectorManager = new SectorManager();
         final Map<UUID, Integer> outsideAreaTicks = new HashMap<>();
@@ -73,9 +73,10 @@ public final class BattlefieldGameManager {
         int countdownTicks = 0;
         int endingTicks = 0;
 
-        MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel battleLevel) {
+        MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel templateLevel, ServerLevel battleLevel) {
             this.arenaId = arenaId;
             this.arena = arena;
+            this.templateLevel = templateLevel;
             this.battleLevel = battleLevel;
         }
     }
@@ -290,6 +291,7 @@ public final class BattlefieldGameManager {
 
     private static void tickMatch(MatchContext ctx) {
         ctx.tickCounter++;
+        forEachParticipant(ctx, BattlefieldGameManager::keepPlayerFed);
 
         if (ctx.phase == Phase.COUNTDOWN) {
             enforceFrozenPhaseMovement(ctx);
@@ -637,10 +639,30 @@ public final class BattlefieldGameManager {
 
     private static void teleportToTeamSpawn(MatchContext ctx, ServerPlayer player, TeamId teamId) {
         if (teamId == TeamId.ATTACKERS) {
-            teleportTo(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
+            setRespawnToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
         } else if (teamId == TeamId.DEFENDERS) {
-            teleportTo(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+            teleportToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+            setRespawnToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
         }
+    }
+
+    public static void handleDeployRequest(ServerPlayer player, int spawnIndex) {
+        MatchContext ctx = findContext(player.getUUID());
+        if (ctx == null || ctx.phase != Phase.RUNNING) {
+            var level = player.serverLevel();
+            var pos = level.getSharedSpawnPos();
+            player.teleportTo(level, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5, player.getYRot(), player.getXRot());
+            return;
+        }
+
+        TeamId team = TeamManager.getTeam(player);
+        if (spawnIndex == 0) {
+            teleportToTeamSpawn(ctx, player, team);
+            return;
+        }
+
+        teleportToTeamSpawn(ctx, player, team);
     }
 
     private static void ensureConfig(ServerLevel defaultLevel) {
@@ -679,6 +701,16 @@ public final class BattlefieldGameManager {
         player.setRespawnPosition(level.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
     }
 
+    private static void teleportToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
+        if (pos == null || battleLevel == null) return;
+        player.teleportTo(battleLevel, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
+    }
+
+    private static void setRespawnToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
+        if (pos == null || battleLevel == null) return;
+        player.setRespawnPosition(battleLevel.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
+    }
+
     private static void forEachParticipant(MatchContext ctx, java.util.function.Consumer<ServerPlayer> action) {
         if (ctx.battleLevel.getServer() == null) return;
         List<ServerPlayer> players = ctx.participants.stream()
@@ -686,6 +718,13 @@ public final class BattlefieldGameManager {
                 .filter(Objects::nonNull)
                 .toList();
         players.forEach(action);
+    }
+
+    private static void keepPlayerFed(ServerPlayer sp) {
+        var food = sp.getFoodData();
+        food.setFoodLevel(20);
+        food.setSaturation(20.0F);
+        food.setExhaustion(0.0F);
     }
 
     private static String participantNames(MatchContext ctx, TeamId teamId) {

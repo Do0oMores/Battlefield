@@ -12,7 +12,6 @@ import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CScoreToastPacket;
 import top.mores.battlefield.team.SquadManager;
-import top.mores.battlefield.team.SquadScoreManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 
@@ -22,6 +21,11 @@ import java.util.*;
 public final class ScoreManager {
     private ScoreManager() {
     }
+
+    
+    
+    
+    
 
     // ===== 分数与旧HUD兼容字段 =====
     private static final Map<UUID, Integer> SCORES = new HashMap<>();
@@ -82,7 +86,6 @@ public final class ScoreManager {
         PRE_HURT_REMAIN.remove(playerId);
         LAST_KILL_AWARD_TICK.remove(playerId);
         HEADSHOT_TICK.remove(playerId);
-        SquadScoreManager.clearAll();
     }
 
     public static int getScore(UUID playerId) {
@@ -135,8 +138,8 @@ public final class ScoreManager {
     public static void onLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
         if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        SquadManager.leaveSquad(player);
         clearPlayer(player.getUUID());
+
         for (Map<String, KillWindow> killWindows : STREAK_SQUAD_KILLS.values()) {
             for (KillWindow window : killWindows.values()) {
                 window.killedVictims().remove(player.getUUID());
@@ -283,17 +286,14 @@ public final class ScoreManager {
         long nowTick = level.getGameTime();
         UUID playerId = player.getUUID();
 
-        // 1) 个人总分累计
+        // 1) 总分累计
         SCORES.put(playerId, SCORES.getOrDefault(playerId, 0) + score);
 
-        // 2) 小队总分累计（按玩家当前所在小队）
-        SquadScoreManager.addScore(player, score);
-
-        // 3) 旧HUD兼容：记录“最后一次加分”
+        // 2) 旧HUD兼容：记录“最后一次加分”
         LAST_BONUS.put(playerId, score);
         LAST_BONUS_TICK.put(playerId, nowTick);
 
-        // 4) 并行 pending：UUID -> EnumMap<reason, PendingToast>
+        // 3) 并行 pending：UUID -> EnumMap<reason, PendingToast>
         EnumMap<ScoreReason, PendingToast> map =
                 PENDING_TOASTS.computeIfAbsent(playerId, k -> new EnumMap<>(ScoreReason.class));
 
@@ -302,6 +302,7 @@ public final class ScoreManager {
             p.amount += score;
             p.lastTick = nowTick;
         } else {
+            // 如果同 reason 存在但超窗：先把旧的发掉，再开新的
             if (p != null) {
                 sendToast(level, player, p.amount, reason);
             }
