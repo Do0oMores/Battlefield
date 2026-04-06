@@ -1,9 +1,9 @@
 package top.mores.battlefield.net;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import top.mores.battlefield.client.ui.RespawnDeployScreen;
 
 import java.util.function.Supplier;
 
@@ -21,12 +21,18 @@ public final class S2COpenDeployScreenPacket {
 
     public static void handle(S2COpenDeployScreenPacket msg, Supplier<NetworkEvent.Context> ctxSup) {
         NetworkEvent.Context ctx = ctxSup.get();
-        ctx.enqueueWork(() -> {
-            Minecraft mc = Minecraft.getInstance();
-            if (mc.player == null) return;
-            if (mc.screen instanceof RespawnDeployScreen) return;
-            mc.setScreen(new RespawnDeployScreen());
-        });
+        ctx.enqueueWork(() ->
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> ClientHandler.handle(msg))
+        );
         ctx.setPacketHandled(true);
+    }
+
+    private static final class ClientHandler {
+        private static void handle(S2COpenDeployScreenPacket msg) {
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            if (mc.player == null) return;
+            if (mc.screen instanceof top.mores.battlefield.client.ui.RespawnDeployScreen) return;
+            mc.setScreen(new top.mores.battlefield.client.ui.RespawnDeployScreen());
+        }
     }
 }
