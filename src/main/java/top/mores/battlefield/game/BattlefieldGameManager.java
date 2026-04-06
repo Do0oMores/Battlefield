@@ -157,23 +157,24 @@ public final class BattlefieldGameManager {
 
         // 防止同 UUID 复用旧冻结锚点
         ctx.frozenAnchors.remove(player.getUUID());
+        ctx.outsideAreaTicks.remove(player.getUUID());
+
+        // 新加入时先清空客户端区域显示，避免继承旧对局/旧阶段状态
+        BattlefieldNet.sendToPlayer(player, new S2CSectorAreaPacket(0, Collections.emptyList(), Collections.emptyList()));
 
         if (ctx.phase == Phase.COUNTDOWN) {
             // 倒计时中途加入：直接冻结到队伍出生点
             freezePlayerAtTeamSpawn(ctx, player);
-        } else {
+        } else if (ctx.phase == Phase.ENDING) {
             teleportTo(player, arena.wait, ctx.battleLevel);
             setRespawn(player, arena.lobby, ctx.battleLevel);
-
-            // ENDING 阶段兜底：给一个当前锚点，避免后续冻结时为空
-            if (ctx.phase == Phase.ENDING) {
-                ctx.frozenAnchors.put(player.getUUID(), captureCurrentAnchor(player));
-            }
+            ctx.frozenAnchors.put(player.getUUID(), captureCurrentAnchor(player));
+        } else {
+            // WAITING / RUNNING 之外的默认加入逻辑
+            teleportTo(player, arena.wait, ctx.battleLevel);
+            setRespawn(player, arena.lobby, ctx.battleLevel);
         }
 
-        if (ctx.phase == Phase.WAITING && ctx.participants.size() >= arena.minPlayerNumber) {
-            beginCountdown(ctx);
-        }
         return team;
     }
 
@@ -311,7 +312,15 @@ public final class BattlefieldGameManager {
         ctx.tickCounter++;
         forEachParticipant(ctx, BattlefieldGameManager::keepPlayerFed);
 
-        if (ctx.phase == Phase.COUNTDOWN) {
+        if (ctx.phase == Phase.WAITING) {
+            if (ctx.participants.size() >= ctx.arena.minPlayerNumber && areParticipantsReadyForCountdown(ctx)) {
+                beginCountdown(ctx);
+            }
+
+            if (ctx.tickCounter % 10 == 0) {
+                sendWaitingActionbar(ctx);
+            }
+        } else if (ctx.phase == Phase.COUNTDOWN) {
             enforceFrozenPhaseMovement(ctx);
             ctx.countdownTicks--;
             if (ctx.countdownTicks <= 0) {
@@ -342,10 +351,6 @@ public final class BattlefieldGameManager {
                 startEnding(ctx, ctx.pendingEndWinner);
                 ctx.pendingEndWinner = null;
             }
-        }
-
-        if (ctx.phase == Phase.WAITING && ctx.tickCounter % 10 == 0) {
-            sendWaitingActionbar(ctx);
         }
 
         syncNameTagTeams(ctx);
@@ -418,9 +423,15 @@ public final class BattlefieldGameManager {
         ensureSession(ctx);
         ctx.frozenAnchors.clear();
 
-        forEachParticipant(ctx, sp -> freezePlayerAtTeamSpawn(ctx, sp));
+        // 倒计时阶段不显示战斗区域，避免在出生冻结期间提示“离开战斗区域”
+        clearSectorAreasToParticipants(ctx);
 
-        syncCurrentSectorAreasToParticipants(ctx);
+        forEachParticipant(ctx, sp -> freezePlayerAtTeamSpawn(ctx, sp));
+    }
+
+    private static void clearSectorAreasToParticipants(MatchContext ctx) {
+        var pkt = new S2CSectorAreaPacket(0, Collections.emptyList(), Collections.emptyList());
+        forEachParticipant(ctx, sp -> BattlefieldNet.sendToPlayer(sp, pkt));
     }
 
     private static void startRunningMatch(MatchContext ctx) {
@@ -489,9 +500,14 @@ public final class BattlefieldGameManager {
 
     private static void ensureSession(MatchContext ctx) {
         if (ctx.session != null) return;
-        GameSession s = new GameSession(ctx.battleLevel, copySectors(ctx.arena.sectors), ctx.arena.military, ctx.arena.addMilitary, ctx.arena.timeMinutes);
+        GameSession s = new GameSession(
+                ctx.battleLevel,
+                copySectors(ctx.arena.sectors),
+                ctx.arena.military,
+                ctx.arena.addMilitary,
+                ctx.arena.timeMinutes
+        );
         ctx.session = s;
-        syncCurrentSectorAreasToParticipants(ctx);
     }
 
     private static void syncCurrentSectorAreasToParticipants(MatchContext ctx) {
@@ -689,11 +705,16 @@ public final class BattlefieldGameManager {
     private static void freezePlayerAtTeamSpawn(MatchContext ctx, ServerPlayer player) {
         TeamId team = TeamManager.getTeam(player);
 
-        // 先按目标出生点配置写入冻结锚点，避免跨世界异步传送时记录到旧位置
         FrozenAnchor anchor = buildTeamSpawnAnchor(ctx, team, player);
         ctx.frozenAnchors.put(player.getUUID(), anchor);
 
-        teleportToTeamSpawn(ctx, player, team);
+        SectorConfigLoader.Position spawnPos = getTeamSpawnPosition(ctx, team);
+        if (spawnPos != null) {
+            setRespawn(player, spawnPos, ctx.battleLevel);
+        }
+
+        player.setDeltaMovement(0, 0, 0);
+        teleportToFrozenAnchor(player, anchor);
     }
 
     private static FrozenAnchor ensureFrozenAnchor(MatchContext ctx, ServerPlayer player) {
@@ -920,5 +941,35 @@ public final class BattlefieldGameManager {
         if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
             event.accept(ModBlocks.TACZ_AMMO_STATION_ITEM.get());
         }
+    }
+
+    private static boolean areParticipantsReadyForCountdown(MatchContext ctx) {
+        if (ctx.battleLevel.getServer() == null) return false;
+        if (ctx.participants.isEmpty()) return false;
+
+        ServerLevel expectedLevel = resolveCountdownReadyLevel(ctx);
+        if (expectedLevel == null) return false;
+
+        for (UUID id : ctx.participants) {
+            ServerPlayer sp = ctx.battleLevel.getServer().getPlayerList().getPlayer(id);
+            if (sp == null) {
+                return false;
+            }
+            if (sp.serverLevel() != expectedLevel) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static ServerLevel resolveCountdownReadyLevel(MatchContext ctx) {
+        SectorConfigLoader.Position waitPos = ctx.arena.wait;
+        if (waitPos != null) {
+            return waitPos.resolveLevel(
+                    ctx.battleLevel.getServer(),
+                    ctx.battleLevel != null ? ctx.battleLevel : null
+            );
+        }
+        return ctx.battleLevel;
     }
 }
