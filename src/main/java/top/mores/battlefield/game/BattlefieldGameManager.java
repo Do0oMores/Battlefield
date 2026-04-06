@@ -15,9 +15,9 @@ import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.scores.Team;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -25,8 +25,8 @@ import net.minecraftforge.fml.loading.FMLPaths;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.block.ModBlocks;
 import top.mores.battlefield.breakthrough.CapturePoint;
-import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.breakthrough.Sector;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CGameStatePacket;
@@ -64,7 +64,7 @@ public final class BattlefieldGameManager {
         ServerLevel battleLevel;
         final SectorManager sectorManager = new SectorManager();
         final Map<UUID, Integer> outsideAreaTicks = new HashMap<>();
-        final Map<UUID, Vec3> frozenAnchors = new HashMap<>();
+        final Map<UUID, FrozenAnchor> frozenAnchors = new HashMap<>();
         final Set<UUID> participants = new HashSet<>();
 
         GameSession session;
@@ -83,6 +83,7 @@ public final class BattlefieldGameManager {
     }
 
     private record PlacedAmmoStation(ResourceKey<net.minecraft.world.level.Level> dimension, BlockPos pos) {}
+    private record FrozenAnchor(ResourceKey<net.minecraft.world.level.Level> dimension, Vec3 pos) {}
 
     public static void loadConfig(ServerLevel defaultLevel) {
         Path cfgDir = FMLPaths.CONFIGDIR.get().resolve("battlefield");
@@ -153,8 +154,22 @@ public final class BattlefieldGameManager {
         ctx.participants.add(player.getUUID());
         PLAYER_MATCH.put(player.getUUID(), arena.areaName);
         SquadManager.autoAssignSquad(player);
-        teleportTo(player, arena.wait, ctx.battleLevel);
-        setRespawn(player, arena.lobby, ctx.battleLevel);
+
+        // 防止同 UUID 复用旧冻结锚点
+        ctx.frozenAnchors.remove(player.getUUID());
+
+        if (ctx.phase == Phase.COUNTDOWN) {
+            // 倒计时中途加入：直接冻结到队伍出生点
+            freezePlayerAtTeamSpawn(ctx, player);
+        } else {
+            teleportTo(player, arena.wait, ctx.battleLevel);
+            setRespawn(player, arena.lobby, ctx.battleLevel);
+
+            // ENDING 阶段兜底：给一个当前锚点，避免后续冻结时为空
+            if (ctx.phase == Phase.ENDING) {
+                ctx.frozenAnchors.put(player.getUUID(), captureCurrentAnchor(player));
+            }
+        }
 
         if (ctx.phase == Phase.WAITING && ctx.participants.size() >= arena.minPlayerNumber) {
             beginCountdown(ctx);
@@ -181,6 +196,7 @@ public final class BattlefieldGameManager {
         sendClientReset(player);
         ctx.participants.remove(player.getUUID());
         ctx.outsideAreaTicks.remove(player.getUUID());
+        ctx.frozenAnchors.remove(player.getUUID());
         PLAYER_MATCH.remove(player.getUUID());
         BombardmentManager.stop(player);
         TeamManager.clearTeam(player);
@@ -338,11 +354,9 @@ public final class BattlefieldGameManager {
 
     private static void enforceFrozenPhaseMovement(MatchContext ctx) {
         forEachParticipant(ctx, sp -> {
-            Vec3 anchor = ctx.frozenAnchors.computeIfAbsent(sp.getUUID(), id -> sp.position());
+            FrozenAnchor anchor = ensureFrozenAnchor(ctx, sp);
             sp.setDeltaMovement(0, 0, 0);
-            if (sp.distanceToSqr(anchor.x, anchor.y, anchor.z) > 0.01D) {
-                sp.teleportTo(sp.serverLevel(), anchor.x, anchor.y, anchor.z, sp.getYRot(), sp.getXRot());
-            }
+            teleportToFrozenAnchor(sp, anchor);
         });
     }
 
@@ -403,10 +417,9 @@ public final class BattlefieldGameManager {
         ctx.countdownTicks = BattlefieldServerConfig.get().gameCountdownSeconds * 20;
         ensureSession(ctx);
         ctx.frozenAnchors.clear();
-        forEachParticipant(ctx, sp -> {
-            teleportToTeamSpawn(ctx, sp, TeamManager.getTeam(sp));
-            ctx.frozenAnchors.put(sp.getUUID(), sp.position());
-        });
+
+        forEachParticipant(ctx, sp -> freezePlayerAtTeamSpawn(ctx, sp));
+
         syncCurrentSectorAreasToParticipants(ctx);
     }
 
@@ -428,7 +441,7 @@ public final class BattlefieldGameManager {
             sp.getInventory().clearContent();
             sp.setGameMode(GameType.ADVENTURE);
             sp.setDeltaMovement(0, 0, 0);
-            ctx.frozenAnchors.put(sp.getUUID(), sp.position());
+            ctx.frozenAnchors.put(sp.getUUID(), captureCurrentAnchor(sp));
         });
     }
 
@@ -670,6 +683,76 @@ public final class BattlefieldGameManager {
         } else if (teamId == TeamId.DEFENDERS) {
             teleportTo(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
             setRespawn(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+        }
+    }
+
+    private static void freezePlayerAtTeamSpawn(MatchContext ctx, ServerPlayer player) {
+        TeamId team = TeamManager.getTeam(player);
+
+        // 先按目标出生点配置写入冻结锚点，避免跨世界异步传送时记录到旧位置
+        FrozenAnchor anchor = buildTeamSpawnAnchor(ctx, team, player);
+        ctx.frozenAnchors.put(player.getUUID(), anchor);
+
+        teleportToTeamSpawn(ctx, player, team);
+    }
+
+    private static FrozenAnchor ensureFrozenAnchor(MatchContext ctx, ServerPlayer player) {
+        FrozenAnchor anchor = ctx.frozenAnchors.get(player.getUUID());
+        if (anchor != null) {
+            return anchor;
+        }
+
+        FrozenAnchor created;
+        if (ctx.phase == Phase.COUNTDOWN) {
+            created = buildTeamSpawnAnchor(ctx, TeamManager.getTeam(player), player);
+        } else {
+            created = captureCurrentAnchor(player);
+        }
+
+        ctx.frozenAnchors.put(player.getUUID(), created);
+        return created;
+    }
+
+    private static FrozenAnchor captureCurrentAnchor(ServerPlayer player) {
+        return new FrozenAnchor(player.serverLevel().dimension(), player.position());
+    }
+
+    private static FrozenAnchor buildTeamSpawnAnchor(MatchContext ctx, TeamId teamId, ServerPlayer player) {
+        SectorConfigLoader.Position spawn = getTeamSpawnPosition(ctx, teamId);
+        if (spawn == null) {
+            return captureCurrentAnchor(player);
+        }
+
+        ServerLevel level = spawn.resolveLevel(
+                player.getServer(),
+                ctx.battleLevel != null ? ctx.battleLevel : player.serverLevel()
+        );
+
+        return new FrozenAnchor(level.dimension(), spawn.toVec3());
+    }
+
+    private static SectorConfigLoader.Position getTeamSpawnPosition(MatchContext ctx, TeamId teamId) {
+        if (teamId == TeamId.ATTACKERS) {
+            return ctx.arena.firstAttackSpawnPoint;
+        }
+        if (teamId == TeamId.DEFENDERS) {
+            return ctx.arena.firstDefendSpawnPoint;
+        }
+        return null;
+    }
+
+    private static void teleportToFrozenAnchor(ServerPlayer player, FrozenAnchor anchor) {
+        ServerLevel targetLevel = player.getServer().getLevel(anchor.dimension());
+        if (targetLevel == null) {
+            targetLevel = player.serverLevel();
+        }
+
+        Vec3 pos = anchor.pos();
+        boolean wrongLevel = player.serverLevel() != targetLevel;
+        boolean moved = player.distanceToSqr(pos.x, pos.y, pos.z) > 0.01D;
+
+        if (wrongLevel || moved) {
+            player.teleportTo(targetLevel, pos.x, pos.y, pos.z, player.getYRot(), player.getXRot());
         }
     }
 
