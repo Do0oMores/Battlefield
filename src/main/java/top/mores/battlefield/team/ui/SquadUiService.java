@@ -1,6 +1,5 @@
 package top.mores.battlefield.team.ui;
 
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.team.SquadManager;
@@ -26,14 +25,13 @@ public final class SquadUiService {
             return new SquadPanelView(List.of(), 0, squadCap);
         }
 
-        ServerLevel level = viewer.serverLevel();
         int selfSquadId = SquadManager.getSquad(viewer);
 
         List<SquadEntryView> entries = new ArrayList<>();
-        for (int squadId : SquadManager.getExistingSquadIds(level, team)) {
+        for (int squadId : SquadManager.getExistingSquadIds(viewer)) {
             List<SquadMemberView> members = new ArrayList<>();
-            for (UUID uuid : SquadManager.getSquadMembers(level, team, squadId)) {
-                ServerPlayer member = level.getServer().getPlayerList().getPlayer(uuid);
+            for (UUID uuid : SquadManager.getSquadMembers(viewer, squadId)) {
+                ServerPlayer member = viewer.server.getPlayerList().getPlayer(uuid);
                 String name = member != null ? member.getGameProfile().getName() : uuid.toString().substring(0, 8);
                 members.add(new SquadMemberView(uuid, name));
             }

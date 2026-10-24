@@ -2,6 +2,7 @@ package top.mores.battlefield.team.ui;
 
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.team.C2SSquadActionPacket;
 import top.mores.battlefield.net.team.S2CSquadPanelPacket;
@@ -17,18 +18,19 @@ public final class SquadUiSync {
         BattlefieldNet.sendToPlayer(player, new S2CSquadPanelPacket(SquadUiService.buildFor(player)));
     }
 
+    /** 只发给同局同阵营的人。原实现按「同维度 + 同阵营」广播，两局共用战场维度时会跨局泄露。 */
     public static void sendToTeamOf(ServerPlayer player) {
         TeamId team = TeamManager.getTeam(player);
         if (team == TeamId.SPECTATOR) return;
 
-        for (ServerPlayer sp : player.server.getPlayerList().getPlayers()) {
-            if (sp.serverLevel() != player.serverLevel()) continue;
+        for (ServerPlayer sp : BattlefieldGameManager.participantsOf(player)) {
             if (TeamManager.getTeam(sp) != team) continue;
             sendTo(sp);
         }
     }
 
     public static void handleAction(ServerPlayer player, C2SSquadActionPacket packet) {
+        if (!BattlefieldGameManager.canUseSquadActions(player)) return;
         boolean ok = switch (packet.action()) {
             case JOIN -> SquadManager.joinSquad(player, packet.squadId());
             case CREATE -> SquadManager.createSquad(player);

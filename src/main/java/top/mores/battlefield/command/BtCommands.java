@@ -1,11 +1,11 @@
 package top.mores.battlefield.command;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.config.TaczAmmoCapConfig;
@@ -39,14 +39,55 @@ public final class BtCommands {
                 .then(Commands.literal("reload")
                         .requires(s -> s.hasPermission(2))
                         .executes(ctx -> {
-                            ServerLevel level = ctx.getSource().getLevel();
-                            int n = BattlefieldGameManager.reloadSectors(level);
-                            int arenas = BattlefieldGameManager.arenaCount();
                             TaczAmmoCapConfig.reload();
                             BattlefieldServerConfig.reload();
-                            ctx.getSource().sendSuccess(() -> Component.literal("[Battlefield] 配置热重载完成，对局数=" + arenas + "，总战线数=" + n), true);
+                            int n = BattlefieldGameManager.reloadSectors(ctx.getSource().getServer());
+                            if (n < 0) {
+                                ctx.getSource().sendFailure(Component.literal("[Battlefield] sectors.json 解析失败，已保留旧配置（详见服务端日志）"));
+                                return 0;
+                            }
+                            int arenas = BattlefieldGameManager.arenaCount();
+                            ctx.getSource().sendSuccess(() -> Component.literal("[Battlefield] 配置热重载完成，对局数=" + arenas + "，总战线数=" + n
+                                    + "（进行中的对局沿用开局时的配置）"), true);
                             return 1;
                         }))
+                .then(Commands.literal("status")
+                        .requires(s -> s.hasPermission(2))
+                        .executes(ctx -> {
+                            for (String line : BattlefieldGameManager.statusLines(ctx.getSource().getServer())) {
+                                ctx.getSource().sendSuccess(() -> Component.literal(line), false);
+                                top.mores.battlefield.Battlefield.LOGGER.info("[Battlefield][status] {}", line);
+                            }
+                            return 1;
+                        }))
+                .then(Commands.literal("admin")
+                        .requires(s -> s.hasPermission(2))
+                        .then(Commands.literal("start")
+                                .then(Commands.argument("match", StringArgumentType.string())
+                                        .suggests((c, b) -> {
+                                            BattlefieldGameManager.matchIds().forEach(id -> b.suggest(StringArgumentType.escapeIfRequired(id)));
+                                            return b.buildFuture();
+                                        })
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                BattlefieldGameManager.forceStart(StringArgumentType.getString(ctx, "match"))))))
+                        .then(Commands.literal("end")
+                                .then(Commands.argument("match", StringArgumentType.string())
+                                        .suggests((c, b) -> {
+                                            BattlefieldGameManager.matchIds().forEach(id -> b.suggest(StringArgumentType.escapeIfRequired(id)));
+                                            return b.buildFuture();
+                                        })
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                BattlefieldGameManager.forceEnd(StringArgumentType.getString(ctx, "match"), TeamId.DEFENDERS)))
+                                        .then(Commands.argument("winner", StringArgumentType.word())
+                                                .suggests((c, b) -> b.suggest("attackers").suggest("defenders").buildFuture())
+                                                .executes(ctx -> reply(ctx.getSource(),
+                                                        BattlefieldGameManager.forceEnd(StringArgumentType.getString(ctx, "match"),
+                                                                TeamId.fromString(StringArgumentType.getString(ctx, "winner"))))))))
+                        .then(Commands.literal("restore")
+                                .then(Commands.argument("slot", IntegerArgumentType.integer(0))
+                                        .executes(ctx -> reply(ctx.getSource(),
+                                                BattlefieldGameManager.restoreSlot(ctx.getSource().getServer(),
+                                                        IntegerArgumentType.getInteger(ctx, "slot")))))))
                 .then(Commands.literal("testBombard")
                         .requires(s -> s.hasPermission(2))
                         .executes(ctx -> {
@@ -74,6 +115,11 @@ public final class BtCommands {
                             return 1;
                         }))
         );
+    }
+
+    private static int reply(CommandSourceStack source, String message) {
+        source.sendSuccess(() -> Component.literal("[Battlefield] " + message), true);
+        return 1;
     }
 
     private static int join(ServerPlayer player, String arenaId, CommandSourceStack source) {

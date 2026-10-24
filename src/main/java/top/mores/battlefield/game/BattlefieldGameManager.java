@@ -4,6 +4,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -15,37 +16,51 @@ import net.minecraft.world.scores.Scoreboard;
 import net.minecraft.world.scores.Team;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.TickEvent;
-import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.living.LivingDropsEvent;
+import net.minecraftforge.event.entity.living.LivingExperienceDropEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.level.BlockEvent;
+import net.minecraftforge.event.server.ServerStartedEvent;
 import net.minecraftforge.event.server.ServerStoppedEvent;
+import net.minecraftforge.event.server.ServerStoppingEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.loading.FMLPaths;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.block.ModBlocks;
-import top.mores.battlefield.block.TaczAmmoStationBlock;
 import top.mores.battlefield.breakthrough.CapturePoint;
-import top.mores.battlefield.config.BattlefieldServerConfig;
-import top.mores.battlefield.config.TaczAmmoCapConfig;
 import top.mores.battlefield.breakthrough.Sector;
+import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.config.SectorConfigLoader;
+import top.mores.battlefield.config.TaczAmmoCapConfig;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CGameStatePacket;
-import top.mores.battlefield.net.S2COpenDeployScreenPacket;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
-import top.mores.battlefield.server.BattleInstanceWorldService;
 import top.mores.battlefield.server.BackpackBridge;
+import top.mores.battlefield.server.BattleTeleport;
 import top.mores.battlefield.server.BombardmentManager;
-import top.mores.battlefield.server.MohistTeleport;
+import top.mores.battlefield.server.arena.*;
 import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 
+import javax.annotation.Nullable;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+/**
+ * 对局总控。
+ * <p>
+ * 一个 {@link MatchContext} 就是一局，键是对局实例 ID（{@code area_alpha#3}），不再是地图名——
+ * 同一张图可以同时开多局。每局要么跑在固定世界里（STATIC），要么独占战场维度里的一个槽位（INSTANCED），
+ * 槽位开局前从模板还原、结束后再还原一次。所有对局状态（参与者、阵营、小队、分数、信标、名牌队伍、
+ * 区域包、聊天播报）都按局隔离，不再有任何「按维度广播」或「全服清零」。
+ */
 @Mod.EventBusSubscriber(modid = Battlefield.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class BattlefieldGameManager {
     private BattlefieldGameManager() {
@@ -53,8 +68,7 @@ public final class BattlefieldGameManager {
 
     public enum Phase {WAITING, COUNTDOWN, RUNNING, ENDING}
 
-    private static final String SCOREBOARD_TEAM_ATTACKERS = "battlefield_atk";
-    private static final String SCOREBOARD_TEAM_DEFENDERS = "battlefield_def";
+    private static final String SCOREBOARD_TEAM_PREFIX = "bf";
 
     /**
      * 客户端状态包发送间隔（tick）。原先每 tick 全量发送，32 人局等于 640 包/秒。
@@ -63,25 +77,48 @@ public final class BattlefieldGameManager {
     private static final int STATE_SYNC_INTERVAL_TICKS = 2;
     /** 名牌队伍同步间隔（tick）。原先每 tick 重建计分板队伍，32 人局等于 640 次/秒。 */
     private static final int NAME_TAG_SYNC_INTERVAL_TICKS = 10;
-    /** 冻结阶段允许的位置漂移上限（格²）。超过才回拉，避免每 tick 全量传送。 */
+    /** 冻结阶段允许偏离冻结起点的距离上限（格²）。超过才回拉，避免每 tick 全量传送。 */
     private static final double FROZEN_MAX_DRIFT_SQR = 0.5 * 0.5;
 
-    private static final Map<String, MatchContext> MATCHES = new HashMap<>();
+    private static final Map<String, MatchContext> MATCHES = new LinkedHashMap<>();
     private static final Map<UUID, String> PLAYER_MATCH = new HashMap<>();
     /** 阵亡玩家在部署界面选择的出生点索引，复活时消费一次 */
     private static final Map<UUID, Integer> PENDING_SPAWN_INDEX = new HashMap<>();
     private static final Map<UUID, PlacedAmmoStation> PLAYER_AMMO_STATIONS = new HashMap<>();
+    /** 正被某局占用（含准备中）的槽位号 */
+    private static final Set<Integer> SLOTS_IN_USE = new HashSet<>();
+    /** 开服预热：等模板读完后判断槽位是否需要还原 */
+    private static final List<PendingPrewarm> PENDING_PREWARM = new ArrayList<>();
 
     private static SectorConfigLoader.SectorConfig config;
+    private static int matchSerial;
 
     private static final class MatchContext {
-        final String arenaId;
-        SectorConfigLoader.ArenaConfig arena;
-        ServerLevel templateLevel;
-        ServerLevel battleLevel;
+        final String matchId;
+        final int serial;
+        final SectorConfigLoader.ArenaConfig arena;
+        final ServerLevel battleLevel;
+        @Nullable
+        final SlotRegistry.Slot slot;
+        @Nullable
+        final SlotGeometry geometry;
+        @Nullable
+        CompletableFuture<ArenaTemplate> template;
+        @Nullable
+        SlotRestoreJob restoreJob;
+        /** 地图已就绪（静态世界恒为 true；槽位要等还原完成） */
+        boolean ready;
+        boolean released;
+        /** 曾有玩家进入过对局世界：结束后槽位必须还原 */
+        boolean everEntered;
+
         final SectorManager sectorManager = new SectorManager();
         final Map<UUID, Integer> outsideAreaTicks = new HashMap<>();
-        final Set<UUID> participants = new HashSet<>();
+        final Set<UUID> participants = new LinkedHashSet<>();
+        /** 已经进入对局世界（拍过快照、清过背包）的参与者 */
+        final Set<UUID> entered = new HashSet<>();
+        /** 冻结阶段每名玩家的锚点 */
+        final Map<UUID, Vec3> frozenAnchors = new HashMap<>();
 
         GameSession session;
         Phase phase = Phase.WAITING;
@@ -93,59 +130,117 @@ public final class BattlefieldGameManager {
         /** 上一次已同步给客户端的阶段序号，用于阶段切换时强制补发状态包 */
         int lastSyncedPhase = -1;
 
-        MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel templateLevel, ServerLevel battleLevel) {
-            this.arenaId = arenaId;
+        MatchContext(String matchId, int serial, SectorConfigLoader.ArenaConfig arena, ServerLevel battleLevel,
+                     @Nullable SlotRegistry.Slot slot, @Nullable SlotGeometry geometry) {
+            this.matchId = matchId;
+            this.serial = serial;
             this.arena = arena;
-            this.templateLevel = templateLevel;
             this.battleLevel = battleLevel;
+            this.slot = slot;
+            this.geometry = geometry;
+        }
+
+        double dx() {
+            return geometry == null ? 0 : geometry.dx();
+        }
+
+        double dz() {
+            return geometry == null ? 0 : geometry.dz();
+        }
+
+        /** 对局内坐标：实例化时把模板坐标平移到槽位、维度换成战场维度；静态世界原样返回。 */
+        SectorConfigLoader.Position inBattle(SectorConfigLoader.Position p) {
+            if (p == null || geometry == null) return p;
+            return new SectorConfigLoader.Position(battleLevel.dimension().location().toString(),
+                    p.x() + dx(), p.y(), p.z() + dz());
+        }
+
+        SectorConfigLoader.Position spawnOf(TeamId team) {
+            return inBattle(team == TeamId.ATTACKERS ? arena.firstAttackSpawnPoint : arena.firstDefendSpawnPoint);
+        }
+
+        ServerLevel levelOf(SectorConfigLoader.Position p) {
+            if (geometry != null) return battleLevel;
+            return p.resolveLevel(battleLevel.getServer(), battleLevel);
+        }
+
+        String teamName(TeamId team) {
+            return SCOREBOARD_TEAM_PREFIX + serial + (team == TeamId.ATTACKERS ? "_atk" : "_def");
         }
     }
 
-    private record PlacedAmmoStation(ResourceKey<net.minecraft.world.level.Level> dimension, BlockPos pos) {}
+    private record PlacedAmmoStation(ResourceKey<net.minecraft.world.level.Level> dimension, BlockPos pos) {
+    }
 
-    public static void loadConfig(ServerLevel defaultLevel) {
+    private record PendingPrewarm(ServerLevel level, SlotRegistry.Slot slot, SlotGeometry geometry,
+                                  CompletableFuture<ArenaTemplate> template) {
+    }
+
+    // ===================================================================================
+    // 配置
+    // ===================================================================================
+
+    /**
+     * 重新读取 sectors.json。解析失败时保留旧配置。
+     * 进行中的对局各自持有创建时的那份 arena 配置，不受重载影响（原实现会把进行中对局的据点进度全部重置）。
+     *
+     * @return 是否成功
+     */
+    public static boolean loadConfig(MinecraftServer server) {
         Path cfgDir = FMLPaths.CONFIGDIR.get().resolve("battlefield");
-        config = SectorConfigLoader.loadConfig(cfgDir);
-
-        Map<String, MatchContext> next = new HashMap<>();
-        for (var arena : config.arenas.values()) {
-            ServerLevel templateLevel = resolveBattleLevel(defaultLevel, arena.templateWorld);
-            if (templateLevel == null) continue;
-            MatchContext old = MATCHES.get(arena.areaName);
-            MatchContext ctx = old != null
-                    ? old
-                    : new MatchContext(arena.areaName, arena, templateLevel, templateLevel);
-            ctx.arena = arena;
-            ctx.templateLevel = templateLevel;
-            if (ctx.session == null || !ctx.arena.useTemporaryWorld) {
-                ctx.battleLevel = templateLevel;
-            }
-            syncSessionWithConfig(ctx);
-            next.put(arena.areaName, ctx);
+        SectorConfigLoader.SectorConfig next;
+        try {
+            next = SectorConfigLoader.loadConfig(cfgDir);
+        } catch (RuntimeException e) {
+            Battlefield.LOGGER.error("[Battlefield] sectors.json 解析失败，继续使用旧配置", e);
+            if (config == null) config = new SectorConfigLoader.SectorConfig(new LinkedHashMap<>());
+            return false;
         }
-        MATCHES.clear();
-        MATCHES.putAll(next);
+
+        for (var arena : next.arenas.values()) {
+            if (!arena.instanced()) continue;
+            ServerLevel battle = BattleWorlds.resolve(server, arena.battleWorld);
+            if (battle == null) {
+                Battlefield.LOGGER.error("[Battlefield] arena '{}' 的战场维度 '{}' 未加载，该 arena 无法开局", arena.areaName, arena.battleWorld);
+            } else {
+                BattleWorlds.registerBattleLevel(battle.dimension());
+            }
+            if (!Files.isDirectory(TemplateStore.templatesDir().resolve(arena.template).resolve("region"))) {
+                Battlefield.LOGGER.error("[Battlefield] arena '{}' 的模板目录不存在: {}", arena.areaName,
+                        TemplateStore.templatesDir().resolve(arena.template).toAbsolutePath());
+            }
+            SlotGeometry probe = SlotGeometry.of(0, arena.templateBounds);
+            if (!probe.fitsSpacing()) {
+                Battlefield.LOGGER.warn("[Battlefield] arena '{}' 模板宽 {} 格，超过槽位间距 {} - 512，相邻对局可能互相看得见",
+                        arena.areaName, arena.templateBounds.widthChunks() * 16, BattlefieldServerConfig.get().slotSpacingBlocks);
+            }
+        }
+        config = next;
+        TemplateStore.invalidateAll();
+        return true;
     }
 
-    private static void syncSessionWithConfig(MatchContext ctx) {
-        if (ctx.session == null) return;
-        ctx.session.setSectors(copySectors(ctx.arena.sectors));
-        ctx.session.addMilitary = Math.max(0, ctx.arena.addMilitary);
-
-        int nextDurationTicks = Math.max(1, ctx.arena.timeMinutes) * 60 * 20;
-        int passedTicks = (int) Math.max(0L, ctx.battleLevel.getGameTime() - ctx.session.startGameTick);
-        ctx.session.matchDurationTicks = Math.max(nextDurationTicks, passedTicks + 1);
+    private static void ensureConfig(MinecraftServer server) {
+        if (config == null) {
+            loadConfig(server);
+        }
     }
+
+    // ===================================================================================
+    // 加入 / 离开
+    // ===================================================================================
 
     public static TeamId joinBattle(ServerPlayer player) {
-        ensureConfig(player.serverLevel());
+        ensureConfig(player.server);
         return joinBattle(player, config.defaultAreaName());
     }
 
     public static TeamId joinBattle(ServerPlayer player, String arenaId) {
-        ensureConfig(player.serverLevel());
+        ensureConfig(player.server);
 
-        if (PLAYER_MATCH.containsKey(player.getUUID())) {
+        String current = PLAYER_MATCH.get(player.getUUID());
+        if (current != null) {
+            player.sendSystemMessage(Component.literal("你已在对局 " + current + " 中，请先 /bt leave"));
             return TeamManager.getTeam(player);
         }
 
@@ -155,46 +250,131 @@ public final class BattlefieldGameManager {
             return TeamId.SPECTATOR;
         }
 
-        MatchContext ctx = getOrCreateMatch(player.serverLevel(), arena.areaName);
+        MatchContext ctx = findJoinableMatch(arena);
         if (ctx == null) {
-            player.sendSystemMessage(Component.literal("无法创建对局: " + arena.areaName));
-            return TeamId.SPECTATOR;
+            ctx = createMatch(player, arena);
+            if (ctx == null) return TeamId.SPECTATOR;
         }
 
-        if (ctx.participants.size() >= arena.maxPlayerNumber) {
-            player.sendSystemMessage(Component.literal("对局 " + arena.areaName + " 已满"));
-            return TeamId.SPECTATOR;
-        }
-
-        // 结算阶段不接受新玩家：此时参与者正在被清背包/传送回大厅，中途插入只会拿到一份错乱的状态
-        if (ctx.phase == Phase.ENDING) {
-            player.sendSystemMessage(Component.literal("对局 " + arena.areaName + " 正在结算，请稍后再加入"));
-            return TeamId.SPECTATOR;
-        }
+        // 先登记对局再分队：分队会触发自动分小队，小队是按对局分桶的
+        PLAYER_MATCH.put(player.getUUID(), ctx.matchId);
+        ctx.participants.add(player.getUUID());
 
         TeamId team = autoAssignWithLimit(ctx, player);
         if (team == TeamId.SPECTATOR) {
-            player.sendSystemMessage(Component.literal("对局 " + arena.areaName + " 已满"));
+            PLAYER_MATCH.remove(player.getUUID());
+            ctx.participants.remove(player.getUUID());
+            player.sendSystemMessage(Component.literal("对局 " + ctx.matchId + " 已满"));
+            if (ctx.participants.isEmpty()) releaseMatch(ctx);
             return team;
         }
-
-        ctx.participants.add(player.getUUID());
-        PLAYER_MATCH.put(player.getUUID(), arena.areaName);
         SquadManager.autoAssignSquad(player);
-        // 入场前先把背包/游戏模式存一份，结算清空后原样还回去
-        PlayerSnapshotStore.capture(player);
 
+        if (ctx.ready) {
+            placeJoiner(ctx, player, team);
+            if (ctx.phase == Phase.WAITING && ctx.participants.size() >= ctx.arena.minPlayerNumber) {
+                beginCountdown(ctx);
+            }
+        } else {
+            player.sendSystemMessage(Component.literal("对局 " + ctx.matchId + " 的地图正在准备，完成后会自动传送。")
+                    .withStyle(ChatFormatting.GRAY));
+        }
+        return team;
+    }
+
+    /** 同一张图里优先进人最多、还在等待的那局；其次倒计时；再次进行中（中途加入）。 */
+    @Nullable
+    private static MatchContext findJoinableMatch(SectorConfigLoader.ArenaConfig arena) {
+        MatchContext best = null;
+        for (MatchContext ctx : MATCHES.values()) {
+            if (ctx.released || !ctx.arena.areaName.equals(arena.areaName)) continue;
+            // 结算阶段不接受新玩家：此时参与者正在被清背包/传送回大厅，中途插入只会拿到一份错乱的状态
+            if (ctx.phase == Phase.ENDING) continue;
+            if (ctx.participants.size() >= ctx.arena.maxPlayerNumber) continue;
+            if (best == null || rank(ctx) > rank(best)) best = ctx;
+        }
+        return best;
+    }
+
+    private static int rank(MatchContext ctx) {
+        int phaseRank = switch (ctx.phase) {
+            case WAITING -> 3;
+            case COUNTDOWN -> 2;
+            case RUNNING -> 1;
+            case ENDING -> 0;
+        };
+        return phaseRank * 10_000 + ctx.participants.size();
+    }
+
+    @Nullable
+    private static MatchContext createMatch(ServerPlayer requester, SectorConfigLoader.ArenaConfig arena) {
+        MinecraftServer server = requester.server;
+        long live = MATCHES.values().stream().filter(c -> !c.released && c.arena.areaName.equals(arena.areaName)).count();
+        if (live >= arena.maxConcurrentMatches) {
+            requester.sendSystemMessage(Component.literal("对局 " + arena.areaName + " 的所有并行对局都已满员或正在结算，请稍后再试"));
+            return null;
+        }
+
+        int serial = ++matchSerial;
+        String matchId = arena.areaName + "#" + serial;
+        MatchContext ctx;
+
+        if (!arena.instanced()) {
+            ServerLevel level = BattleWorlds.resolve(server, arena.world);
+            if (level == null) {
+                requester.sendSystemMessage(Component.literal("对局世界 " + arena.world + " 未加载，无法开局"));
+                return null;
+            }
+            ctx = new MatchContext(matchId, serial, arena, level, null, null);
+            ctx.ready = true;
+        } else {
+            ServerLevel level = BattleWorlds.resolve(server, arena.battleWorld);
+            if (level == null) {
+                requester.sendSystemMessage(Component.literal("战场维度 " + arena.battleWorld + " 未加载，无法开局"));
+                return null;
+            }
+            SlotRegistry registry = SlotRegistry.get(server);
+            SlotRegistry.Slot slot = acquireSlot(registry, arena);
+            if (slot == null) {
+                requester.sendSystemMessage(Component.literal("当前没有空闲的战场槽位，请稍后再试"));
+                return null;
+            }
+            SlotGeometry geometry = SlotGeometry.of(slot.index, arena.templateBounds);
+            ctx = new MatchContext(matchId, serial, arena, level, slot, geometry);
+            ctx.template = TemplateStore.get(server, arena);
+            SLOTS_IN_USE.add(slot.index);
+        }
+
+        MATCHES.put(matchId, ctx);
+        Battlefield.LOGGER.info("[Battlefield] 创建对局 {}（模式 {}，{}）", matchId, arena.mode,
+                ctx.slot == null ? "世界 " + arena.world : "槽位 #" + ctx.slot.index + " 原点区块 ("
+                        + ctx.geometry.originChunkX() + ", " + ctx.geometry.originChunkZ() + ")");
+        return ctx;
+    }
+
+    /** 优先用本 arena 已有的、没人占用的干净槽位；其次没人占用的脏槽位（需要还原）；最后新分配一个。 */
+    @Nullable
+    private static SlotRegistry.Slot acquireSlot(SlotRegistry registry, SectorConfigLoader.ArenaConfig arena) {
+        SlotRegistry.Slot best = null;
+        for (SlotRegistry.Slot s : registry.slotsOf(arena.areaName)) {
+            if (SLOTS_IN_USE.contains(s.index)) continue;
+            if (best == null || (s.clean() && !best.clean())) best = s;
+        }
+        return best != null ? best : registry.allocate(arena.areaName);
+    }
+
+    /** 地图就绪后把玩家放进对局：等待中去等待点，否则直接落本方主出生点。 */
+    private static void placeJoiner(MatchContext ctx, ServerPlayer player, TeamId team) {
         if (ctx.phase == Phase.WAITING) {
-            // 未开局：先在等待区集合，倒计时开始时统一传送到本方出生点
-            teleportTo(player, arena.wait);
+            enterMatchWorld(ctx, player, ctx.inBattle(ctx.arena.wait));
         } else {
             // 中途加入（倒计时/进行中）：直接落本方主出生点。
             // 原实现一律传送到 wait 区，wait 可能落在可活动区域之外，开局后会被 enforcement 直接判死。
-            teleportToTeamSpawn(ctx, player, team);
+            enterMatchWorld(ctx, player, ctx.spawnOf(team));
         }
-        setRespawn(player, arena.lobby, ctx.battleLevel);
+        setRespawnToTeamSpawn(ctx, player, team);
 
-        // 中途加入者拿不到开局时整维度广播的区域包，这里单独补一份，
+        // 中途加入者拿不到开局时下发的区域包，这里单独补一份，
         // 否则客户端没有区域框、也没有出界警告，但服务端照样按矩形计时击杀。
         if (ctx.phase != Phase.WAITING && ctx.session != null) {
             Sector cur = ctx.session.currentSector();
@@ -203,53 +383,136 @@ public final class BattlefieldGameManager {
                         cur.attackerAreas, cur.defenderAreas);
             }
         }
+    }
 
-        if (ctx.phase == Phase.WAITING && ctx.participants.size() >= arena.minPlayerNumber) {
-            beginCountdown(ctx);
+    /** 第一次进入对局世界时拍快照并清空背包，然后传送。 */
+    private static void enterMatchWorld(MatchContext ctx, ServerPlayer player, SectorConfigLoader.Position pos) {
+        if (ctx.entered.add(player.getUUID())) {
+            PlayerSnapshotStore.captureAndClear(player);
+            if (ctx.slot != null && !ctx.everEntered) {
+                SlotRegistry.get(player.server).markDirty(ctx.slot);
+            }
+            ctx.everEntered = true;
         }
-        return team;
+        teleportInMatch(ctx, player, pos);
+    }
+
+    private static void teleportInMatch(MatchContext ctx, ServerPlayer player, SectorConfigLoader.Position pos) {
+        if (pos == null) return;
+        if (ctx.geometry != null) {
+            BattleTeleport.toLevel(player, ctx.battleLevel, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
+        } else {
+            BattleTeleport.toPosition(player, pos, null);
+        }
+    }
+
+    private static void setRespawnToTeamSpawn(MatchContext ctx, ServerPlayer player, TeamId team) {
+        SectorConfigLoader.Position pos = ctx.spawnOf(team);
+        if (pos == null || team == TeamId.SPECTATOR) return;
+        player.setRespawnPosition(ctx.levelOf(pos).dimension(), BlockPos.containing(pos.toVec3()), 0, true, false);
     }
 
     public static void leaveBattle(ServerPlayer player) {
-        String arenaId = PLAYER_MATCH.get(player.getUUID());
-        if (arenaId == null) {
-            sendClientReset(player);
-            return;
-        }
-
-        MatchContext ctx = MATCHES.get(arenaId);
+        String matchId = PLAYER_MATCH.get(player.getUUID());
+        MatchContext ctx = matchId == null ? null : MATCHES.get(matchId);
         if (ctx == null) {
             PLAYER_MATCH.remove(player.getUUID());
-            PENDING_SPAWN_INDEX.remove(player.getUUID());
-            TeamManager.clearTeam(player);
-            ScoreManager.clearPlayer(player.getUUID());
-            PlayerSnapshotStore.restore(player);
             sendClientReset(player);
+            // 不在任何对局里却还留着快照（例如上一局异常中断）：顺手还原
+            if (PlayerSnapshotStore.hasSnapshot(player)) {
+                BattleTeleport.sendHome(player, PlayerSnapshotStore.restore(player), defaultLobby());
+            }
             return;
         }
 
-        sendClientReset(player);
-        ctx.participants.remove(player.getUUID());
-        ctx.outsideAreaTicks.remove(player.getUUID());
-        PLAYER_MATCH.remove(player.getUUID());
-        PENDING_SPAWN_INDEX.remove(player.getUUID());
-        BombardmentManager.stop(player);
-        TeamManager.clearTeam(player);
-        ScoreManager.clearPlayer(player.getUUID());
-        PlayerSnapshotStore.restore(player);
-        teleportTo(player, ctx.arena.lobby);
-        setRespawn(player, ctx.arena.lobby, ctx.battleLevel);
+        removeParticipant(ctx, player, false);
+        afterParticipantLeft(ctx);
+    }
 
+    private static void afterParticipantLeft(MatchContext ctx) {
         if (ctx.participants.isEmpty()) {
-            resetMatch(ctx);
+            releaseMatch(ctx);
             return;
         }
-
         if ((ctx.phase == Phase.COUNTDOWN || ctx.phase == Phase.WAITING) && ctx.participants.size() < ctx.arena.minPlayerNumber) {
             ctx.phase = Phase.WAITING;
             ctx.countdownTicks = 0;
+            ctx.frozenAnchors.clear();
         }
     }
+
+    /**
+     * 把一名玩家从对局里摘掉并清理他在各张表里的状态。
+     *
+     * @param loggingOut 掉线时只还原背包、不传送（登出事件里做跨维度传送不可靠），位置在下次登录时处理
+     */
+    private static void removeParticipant(MatchContext ctx, ServerPlayer player, boolean loggingOut) {
+        UUID id = player.getUUID();
+        sendClientReset(player);
+        BombardmentManager.stop(player);
+        RespawnBeaconManager.removeOwnerBeacon(player.server, id);
+        removeFromNameTagTeams(ctx, player);
+        // 先清阵营再摘对局：清阵营会把人从小队里移除，小队是按对局查的
+        TeamManager.clearTeam(player);
+        ScoreManager.clearPlayer(id);
+
+        PLAYER_MATCH.remove(id);
+        PENDING_SPAWN_INDEX.remove(id);
+        PLAYER_AMMO_STATIONS.remove(id);
+        ctx.participants.remove(id);
+        ctx.outsideAreaTicks.remove(id);
+        ctx.frozenAnchors.remove(id);
+
+        if (ctx.entered.remove(id)) {
+            if (loggingOut) {
+                PlayerSnapshotStore.restoreInventoryKeepReturn(player);
+            } else {
+                BattleTeleport.sendHome(player, PlayerSnapshotStore.restore(player), ctx.arena.lobby);
+            }
+        }
+    }
+
+    /** 对局结束：释放所有局内状态，槽位交给还原服务。 */
+    private static void releaseMatch(MatchContext ctx) {
+        if (ctx.released) return;
+        ctx.released = true;
+        MATCHES.remove(ctx.matchId);
+
+        for (UUID id : ctx.participants) {
+            PLAYER_MATCH.remove(id);
+            PENDING_SPAWN_INDEX.remove(id);
+            PLAYER_AMMO_STATIONS.remove(id);
+            ScoreManager.clearPlayer(id);
+        }
+        removeNameTagTeams(ctx);
+        RespawnBeaconManager.clearMatch(ctx.matchId, ctx.battleLevel, ctx.participants);
+        SquadManager.clearMatch(ctx.matchId);
+        ctx.participants.clear();
+
+        if (ctx.slot != null) {
+            SLOTS_IN_USE.remove(ctx.slot.index);
+            // 有人进去过就立刻还原，下一局拿到的就是干净槽位；准备阶段的还原任务（若还没跑完）会继续跑
+            if (ctx.everEntered) {
+                MinecraftServer server = ctx.battleLevel.getServer();
+                SlotRestoreService.schedule(ctx.battleLevel, ctx.slot, ctx.geometry, TemplateStore.get(server, ctx.arena));
+            }
+        }
+        Battlefield.LOGGER.info("[Battlefield] 对局 {} 已释放{}", ctx.matchId,
+                ctx.slot != null && ctx.everEntered ? "，槽位 #" + ctx.slot.index + " 开始还原" : "");
+    }
+
+    private static void abortMatch(MatchContext ctx, String reason) {
+        Battlefield.LOGGER.error("[Battlefield] 对局 {} 已取消：{}", ctx.matchId, reason);
+        for (ServerPlayer sp : participants(ctx)) {
+            sp.sendSystemMessage(Component.literal("对局 " + ctx.matchId + " 已取消：" + reason).withStyle(ChatFormatting.RED));
+            removeParticipant(ctx, sp, false);
+        }
+        releaseMatch(ctx);
+    }
+
+    // ===================================================================================
+    // 部署
+    // ===================================================================================
 
     /**
      * 部署请求的处理结果，用于给客户端回显失败原因。
@@ -281,7 +544,7 @@ public final class BattlefieldGameManager {
         }
 
         MatchContext ctx = findContext(player.getUUID());
-        if (ctx == null) {
+        if (ctx == null || !ctx.entered.contains(player.getUUID())) {
             return DeployResult.fail("你当前不在对局中。");
         }
         if (ctx.phase == Phase.WAITING) {
@@ -313,9 +576,7 @@ public final class BattlefieldGameManager {
             return DeployResult.OK;
         }
 
-        player.setDeltaMovement(0, 0, 0);
-        player.fallDistance = 0.0f;
-        player.teleportTo(target.level(), target.x(), target.y(), target.z(), target.yaw(), 0.0f);
+        BattleTeleport.toLevel(player, target.level(), target.x(), target.y(), target.z(), target.yaw(), 0.0f);
         player.setRespawnPosition(target.level().dimension(),
                 BlockPos.containing(target.x(), target.y(), target.z()), target.yaw(), true, false);
 
@@ -323,16 +584,12 @@ public final class BattlefieldGameManager {
         return DeployResult.OK;
     }
 
-    @javax.annotation.Nullable
+    @Nullable
     private static DeployTarget resolveDeployTarget(ServerPlayer player, MatchContext ctx, TeamId team, int spawnIndex) {
         if (spawnIndex <= 0) {
-            SectorConfigLoader.Position pos = (team == TeamId.ATTACKERS)
-                    ? ctx.arena.firstAttackSpawnPoint
-                    : ctx.arena.firstDefendSpawnPoint;
+            SectorConfigLoader.Position pos = ctx.spawnOf(team);
             if (pos == null) return null;
-            ServerLevel level = pos.resolveLevel(player.getServer(), ctx.battleLevel);
-            if (level == null) return null;
-            return new DeployTarget(level, pos.x(), pos.y(), pos.z(), player.getYRot());
+            return new DeployTarget(ctx.levelOf(pos), pos.x(), pos.y(), pos.z(), player.getYRot());
         }
 
         List<BeaconSpawnCandidate> beacons = BeaconRespawnLogic.collect(player);
@@ -345,37 +602,99 @@ public final class BattlefieldGameManager {
         return new DeployTarget(candidate.level(), p.x, p.y, p.z, candidate.yaw());
     }
 
+    // ===================================================================================
+    // 事件
+    // ===================================================================================
+
     @SubscribeEvent
-    public static void onLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+    public static void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (!Battlefield.isEnabled()) return;
-        if (event.getEntity() instanceof ServerPlayer sp && PLAYER_MATCH.containsKey(sp.getUUID())) {
-            leaveBattle(sp);
-        }
+        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        MatchContext ctx = findContext(sp.getUUID());
+        if (ctx == null) return;
+        removeParticipant(ctx, sp, true);
+        afterParticipantLeft(ctx);
     }
 
     /**
-     * 服务器异常退出时快照还留在存档里，玩家重新登录后补发，
-     * 避免"上一局背包被清空、却没来得及还原"造成装备丢失。
+     * 登录时处理上一次留下的状态：
+     * <ul>
+     *   <li>掉线：背包已在登出时还原，这里把人从战场维度送回进场前的位置；</li>
+     *   <li>崩服：快照还在、背包还是对局里的，这里一并还原；</li>
+     *   <li>残留阵营（对局不会跨重启存活）一律清掉。</li>
+     * </ul>
      */
     @SubscribeEvent
     public static void onLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        if (PLAYER_MATCH.containsKey(sp.getUUID())) return;
+
+        if (TeamManager.getTeam(sp) != TeamId.SPECTATOR) {
+            TeamManager.clearTeam(sp);
+        }
         if (PlayerSnapshotStore.hasSnapshot(sp)) {
-            PlayerSnapshotStore.restore(sp);
+            BattleTeleport.sendHome(sp, PlayerSnapshotStore.restore(sp), defaultLobby());
+            Battlefield.LOGGER.info("[Battlefield] 玩家 {} 登录时补还原了上次对局的快照", sp.getGameProfile().getName());
+        } else if (BattleWorlds.isBattleLevel(sp.serverLevel())) {
+            BattleTeleport.sendHome(sp, null, defaultLobby());
         }
     }
 
     @SubscribeEvent
+    public static void onServerStarted(ServerStartedEvent event) {
+        MinecraftServer server = event.getServer();
+        int stale = TeamManager.clearAllStale(server.overworld());
+        if (stale > 0) {
+            Battlefield.LOGGER.info("[Battlefield] 清理了 {} 条残留阵营记录", stale);
+        }
+        loadConfig(server);
+
+        SlotRegistry registry = SlotRegistry.get(server);
+        if (registry.markRunning()) {
+            Battlefield.LOGGER.warn("[Battlefield] 检测到上次异常退出，所有战场槽位将重新校验");
+        }
+
+        // 开服预热：每个实例化 arena 先准备好 prewarmSlots 个干净槽位，第一局不用等
+        for (var arena : config.arenas.values()) {
+            if (!arena.instanced() || arena.prewarmSlots <= 0) continue;
+            ServerLevel level = BattleWorlds.resolve(server, arena.battleWorld);
+            if (level == null) continue;
+            List<SlotRegistry.Slot> slots = new ArrayList<>(registry.slotsOf(arena.areaName));
+            while (slots.size() < arena.prewarmSlots) {
+                SlotRegistry.Slot s = registry.allocate(arena.areaName);
+                if (s == null) break;
+                slots.add(s);
+            }
+            CompletableFuture<ArenaTemplate> template = TemplateStore.get(server, arena);
+            for (int i = 0; i < Math.min(arena.prewarmSlots, slots.size()); i++) {
+                SlotRegistry.Slot s = slots.get(i);
+                PENDING_PREWARM.add(new PendingPrewarm(level, s, SlotGeometry.of(s.index, arena.templateBounds), template));
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public static void onServerStopping(ServerStoppingEvent event) {
+        // 正常关服标记：随后的最终存档会带上它。仍在进行的对局所在槽位已经是脏的，下次开服会还原
+        SlotRegistry.get(event.getServer()).markStopped();
+    }
+
+    @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
-        MATCHES.values().forEach(BattlefieldGameManager::resetMatch);
         MATCHES.clear();
         PLAYER_MATCH.clear();
         PENDING_SPAWN_INDEX.clear();
         PLAYER_AMMO_STATIONS.clear();
+        SLOTS_IN_USE.clear();
+        PENDING_PREWARM.clear();
         config = null;
+        matchSerial = 0;
         BombardmentManager.clearAll();
-        BattleInstanceWorldService.releaseAll();
+        RespawnBeaconManager.clearAll();
+        SquadManager.clearAll();
+        SlotRestoreService.cancelAll();
+        TemplateStore.shutdown();
         // 弹药上限配置改为延迟落盘，正常停服时补一次，避免丢掉最后一次 flush 之后的变更
         TaczAmmoCapConfig.flushIfDirty();
     }
@@ -413,7 +732,8 @@ public final class BattlefieldGameManager {
         }
     }
 
-    @SubscribeEvent
+    /** 最低优先级：前面的监听者（图腾类 mod）取消了死亡事件时不再扣票。 */
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public static void onPlayerDeath(LivingDeathEvent event) {
         if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer dead)) return;
@@ -429,12 +749,29 @@ public final class BattlefieldGameManager {
         }
     }
 
+    /**
+     * 参与者死亡不掉落：装备来自部署配装，结算时还原快照。掉在地上只会变成可被他人捡走的复制源。
+     */
+    @SubscribeEvent
+    public static void onLivingDrops(LivingDropsEvent event) {
+        if (event.getEntity() instanceof ServerPlayer sp && isEnteredParticipant(sp)) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onExperienceDrop(LivingExperienceDropEvent event) {
+        if (event.getEntity() instanceof ServerPlayer sp && isEnteredParticipant(sp)) {
+            event.setCanceled(true);
+        }
+    }
+
     @SubscribeEvent
     public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
         MatchContext ctx = findContext(sp.getUUID());
-        if (ctx == null) return;
+        if (ctx == null || !ctx.entered.contains(sp.getUUID())) return;
 
         TeamId team = TeamManager.getTeam(sp);
         if (team == TeamId.SPECTATOR) return;
@@ -444,7 +781,7 @@ public final class BattlefieldGameManager {
         if (pendingIndex != null) {
             DeployTarget pending = resolveDeployTarget(sp, ctx, team, pendingIndex);
             if (pending != null) {
-                sp.teleportTo(pending.level(), pending.x(), pending.y(), pending.z(), pending.yaw(), 0.0f);
+                BattleTeleport.toLevel(sp, pending.level(), pending.x(), pending.y(), pending.z(), pending.yaw(), 0.0f);
                 return;
             }
             sp.displayClientMessage(Component.literal("所选部署点已失效，改用默认出生点。")
@@ -457,25 +794,54 @@ public final class BattlefieldGameManager {
         }
 
         // ③ 没有信标 / 信标被摧毁 / 被方块堵住 → 回落到队伍主出生点
-        if (team == TeamId.ATTACKERS) {
-            teleportTo(sp, ctx.arena.firstAttackSpawnPoint);
-        } else if (team == TeamId.DEFENDERS) {
-            teleportTo(sp, ctx.arena.firstDefendSpawnPoint);
-        }
+        teleportInMatch(ctx, sp, ctx.spawnOf(team));
     }
 
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent e) {
         if (!Battlefield.isEnabled()) return;
         if (e.phase != TickEvent.Phase.END) return;
-        for (MatchContext ctx : MATCHES.values()) {
+        if (!PENDING_PREWARM.isEmpty()) pollPrewarm();
+        if (MATCHES.isEmpty()) return;
+        // 拷贝一份：结算会把对局从表里摘掉
+        for (MatchContext ctx : new ArrayList<>(MATCHES.values())) {
             tickMatch(ctx);
         }
     }
 
+    private static void pollPrewarm() {
+        Iterator<PendingPrewarm> it = PENDING_PREWARM.iterator();
+        while (it.hasNext()) {
+            PendingPrewarm p = it.next();
+            if (!p.template().isDone()) continue;
+            it.remove();
+            if (p.template().isCompletedExceptionally()) {
+                Battlefield.LOGGER.error("[Battlefield] 槽位 #{} 预热失败：模板读取异常", p.slot().index);
+                continue;
+            }
+            ArenaTemplate t = p.template().join();
+            if (!p.slot().isClean(t.fingerprint, p.geometry()) && !SLOTS_IN_USE.contains(p.slot().index)) {
+                SlotRestoreService.schedule(p.level(), p.slot(), p.geometry(), p.template());
+            }
+        }
+    }
+
+    // ===================================================================================
+    // 对局循环
+    // ===================================================================================
+
     private static void tickMatch(MatchContext ctx) {
         ctx.tickCounter++;
-        forEachParticipant(ctx, BattlefieldGameManager::keepPlayerFed);
+
+        if (!ctx.ready) {
+            pollPreparation(ctx);
+            if (!ctx.ready) {
+                if (ctx.tickCounter % 10 == 0) sendPreparingActionbar(ctx);
+                return;
+            }
+        }
+
+        forEachEntered(ctx, BattlefieldGameManager::keepPlayerFed);
 
         if (ctx.phase == Phase.COUNTDOWN) {
             enforceFrozenPhaseMovement(ctx);
@@ -500,7 +866,7 @@ public final class BattlefieldGameManager {
             enforceMovableArea(ctx);
 
             if (ctx.tickCounter % BattlefieldServerConfig.get().captureIntervalTicks == 0) {
-                ctx.sectorManager.tick(ctx.session);
+                ctx.sectorManager.tick(ctx.session, participants(ctx));
                 checkWinConditionBySector(ctx);
             }
 
@@ -515,6 +881,55 @@ public final class BattlefieldGameManager {
         }
 
         syncPeriodicViews(ctx);
+    }
+
+    /** 等模板读完、槽位还原完。全部异步进行，这里只轮询状态。 */
+    private static void pollPreparation(MatchContext ctx) {
+        if (ctx.template == null || ctx.slot == null) {
+            ctx.ready = true;
+            onMatchReady(ctx);
+            return;
+        }
+        if (!ctx.template.isDone()) return;
+
+        ArenaTemplate template;
+        try {
+            template = ctx.template.join();
+        } catch (Exception e) {
+            Throwable cause = e.getCause() != null ? e.getCause() : e;
+            abortMatch(ctx, "地图模板读取失败（" + cause.getMessage() + "）");
+            return;
+        }
+
+        if (ctx.restoreJob == null) {
+            boolean busy = SlotRestoreService.jobFor(ctx.slot.index) != null;
+            if (!busy && ctx.slot.isClean(template.fingerprint, ctx.geometry)) {
+                ctx.ready = true;
+                onMatchReady(ctx);
+                return;
+            }
+            ctx.restoreJob = SlotRestoreService.schedule(ctx.battleLevel, ctx.slot, ctx.geometry, ctx.template);
+        }
+
+        switch (ctx.restoreJob.state()) {
+            case DONE -> {
+                ctx.ready = true;
+                onMatchReady(ctx);
+            }
+            case FAILED, CANCELLED -> abortMatch(ctx, "地图还原失败");
+            default -> {
+            }
+        }
+    }
+
+    private static void onMatchReady(MatchContext ctx) {
+        Battlefield.LOGGER.info("[Battlefield] 对局 {} 地图就绪，{} 名玩家进场", ctx.matchId, ctx.participants.size());
+        for (ServerPlayer sp : participants(ctx)) {
+            placeJoiner(ctx, sp, TeamManager.getTeam(sp));
+        }
+        if (ctx.phase == Phase.WAITING && ctx.participants.size() >= ctx.arena.minPlayerNumber) {
+            beginCountdown(ctx);
+        }
     }
 
     /**
@@ -535,18 +950,19 @@ public final class BattlefieldGameManager {
         }
     }
 
+    /**
+     * 冻结阶段防移动。按「冻结起点」判定：原实现比较的是上一 tick 的位置（xo/yo/zo），
+     * 每 tick 走 0.2 格永远不触发回拉，改过的客户端倒计时期间可以自由走动。
+     */
     private static void enforceFrozenPhaseMovement(MatchContext ctx) {
         for (ServerPlayer sp : participants(ctx)) {
+            if (!ctx.entered.contains(sp.getUUID())) continue;
             sp.setDeltaMovement(0, 0, 0);
 
-            // 原先只要坐标与上一 tick 不等就 teleportTo，等价于每 tick 对每名玩家全量传送：
-            // 32 人 × 20tps = 640 次/秒，每次都会下发位置包并触发客户端插值回拉（橡皮筋）。
-            // 客户端已有 BattlefieldClientMovementBlocker 清零输入，这里只兜底被爆炸/作弊推开的情况。
-            double dx = sp.getX() - sp.xo;
-            double dy = sp.getY() - sp.yo;
-            double dz = sp.getZ() - sp.zo;
-            if (dx * dx + dy * dy + dz * dz > FROZEN_MAX_DRIFT_SQR) {
-                sp.teleportTo(sp.serverLevel(), sp.xo, sp.yo, sp.zo, sp.getYRot(), sp.getXRot());
+            Vec3 anchor = ctx.frozenAnchors.computeIfAbsent(sp.getUUID(), k -> sp.position());
+            // 客户端已有 BattlefieldClientMovementBlocker 清零输入，这里只兜底被爆炸/作弊推开的情况
+            if (sp.position().distanceToSqr(anchor) > FROZEN_MAX_DRIFT_SQR) {
+                sp.teleportTo(sp.serverLevel(), anchor.x, anchor.y, anchor.z, sp.getYRot(), sp.getXRot());
             }
         }
     }
@@ -555,9 +971,8 @@ public final class BattlefieldGameManager {
         if (ctx.battleLevel.getServer() == null) return;
 
         Scoreboard scoreboard = ctx.battleLevel.getServer().getScoreboard();
-        String suffix = "_" + ctx.arenaId;
-        PlayerTeam atkTeam = ensureNameTagTeam(scoreboard, SCOREBOARD_TEAM_ATTACKERS + suffix, Component.literal("Battlefield Attackers " + ctx.arenaId));
-        PlayerTeam defTeam = ensureNameTagTeam(scoreboard, SCOREBOARD_TEAM_DEFENDERS + suffix, Component.literal("Battlefield Defenders " + ctx.arenaId));
+        PlayerTeam atkTeam = ensureNameTagTeam(scoreboard, ctx.teamName(TeamId.ATTACKERS), Component.literal("Battlefield Attackers " + ctx.matchId));
+        PlayerTeam defTeam = ensureNameTagTeam(scoreboard, ctx.teamName(TeamId.DEFENDERS), Component.literal("Battlefield Defenders " + ctx.matchId));
 
         Set<String> activeAtk = new HashSet<>();
         Set<String> activeDef = new HashSet<>();
@@ -566,10 +981,10 @@ public final class BattlefieldGameManager {
             String name = sp.getScoreboardName();
             if (t == TeamId.ATTACKERS) {
                 activeAtk.add(name);
-                scoreboard.addPlayerToTeam(name, atkTeam);
+                if (scoreboard.getPlayersTeam(name) != atkTeam) scoreboard.addPlayerToTeam(name, atkTeam);
             } else if (t == TeamId.DEFENDERS) {
                 activeDef.add(name);
-                scoreboard.addPlayerToTeam(name, defTeam);
+                if (scoreboard.getPlayersTeam(name) != defTeam) scoreboard.addPlayerToTeam(name, defTeam);
             }
         });
 
@@ -603,31 +1018,60 @@ public final class BattlefieldGameManager {
         }
     }
 
+    private static void removeFromNameTagTeams(MatchContext ctx, ServerPlayer sp) {
+        Scoreboard scoreboard = sp.server.getScoreboard();
+        PlayerTeam team = scoreboard.getPlayersTeam(sp.getScoreboardName());
+        if (team != null && (team.getName().equals(ctx.teamName(TeamId.ATTACKERS)) || team.getName().equals(ctx.teamName(TeamId.DEFENDERS)))) {
+            scoreboard.removePlayerFromTeam(sp.getScoreboardName(), team);
+        }
+    }
+
+    /** 局结束删掉本局的两个计分板队伍。原实现从不删除，队伍随 scoreboard.dat 永久堆积。 */
+    private static void removeNameTagTeams(MatchContext ctx) {
+        Scoreboard scoreboard = ctx.battleLevel.getServer().getScoreboard();
+        for (TeamId t : new TeamId[]{TeamId.ATTACKERS, TeamId.DEFENDERS}) {
+            PlayerTeam team = scoreboard.getPlayerTeam(ctx.teamName(t));
+            if (team != null) scoreboard.removePlayerTeam(team);
+        }
+    }
+
     private static void sendWaitingActionbar(MatchContext ctx) {
-        String text = "【对局 " + ctx.arenaId + " 需要 " + ctx.participants.size() + "/" + ctx.arena.minPlayerNumber + " 来开始】";
+        String text = "【对局 " + ctx.matchId + " 需要 " + ctx.participants.size() + "/" + ctx.arena.minPlayerNumber + " 来开始】";
         Component message = Component.literal(text);
+        forEachParticipant(ctx, sp -> sp.displayClientMessage(message, true));
+    }
+
+    private static void sendPreparingActionbar(MatchContext ctx) {
+        int pct = ctx.restoreJob == null ? 0 : Math.round(ctx.restoreJob.progress() * 100);
+        Component message = Component.literal("【对局 " + ctx.matchId + " 地图准备中 " + pct + "%】");
         forEachParticipant(ctx, sp -> sp.displayClientMessage(message, true));
     }
 
     private static void beginCountdown(MatchContext ctx) {
         ctx.phase = Phase.COUNTDOWN;
         ctx.countdownTicks = BattlefieldServerConfig.get().gameCountdownSeconds * 20;
-        prepareBattleWorld(ctx);
+        ctx.frozenAnchors.clear();
         ensureSession(ctx);
-        forEachParticipant(ctx, sp -> teleportToTeamSpawn(ctx, sp, TeamManager.getTeam(sp)));
+        forEachParticipant(ctx, sp -> {
+            TeamId team = TeamManager.getTeam(sp);
+            enterMatchWorld(ctx, sp, ctx.spawnOf(team));
+            setRespawnToTeamSpawn(ctx, sp, team);
+        });
     }
 
     private static void startRunningMatch(MatchContext ctx) {
         ctx.phase = Phase.RUNNING;
         ctx.pendingEndWinner = null;
+        ctx.frozenAnchors.clear();
     }
 
     private static void startEnding(MatchContext ctx, TeamId winner) {
         ctx.phase = Phase.ENDING;
         ctx.winner = winner;
         ctx.endingTicks = BattlefieldServerConfig.get().gameEndingSeconds * 20;
+        ctx.frozenAnchors.clear();
 
-        forEachParticipant(ctx, sp -> {
+        forEachEntered(ctx, sp -> {
             sp.getInventory().clearContent();
             sp.setGameMode(GameType.ADVENTURE);
             sp.setDeltaMovement(0, 0, 0);
@@ -636,37 +1080,11 @@ public final class BattlefieldGameManager {
 
     private static void finishAndReset(MatchContext ctx) {
         executeResultCommands(ctx);
-        forEachParticipant(ctx, sp -> {
-            sendClientReset(sp);
-            // 必须先还原再传送：startEnding() 清过背包，这里不还原就等于装备被吞
-            PlayerSnapshotStore.restore(sp);
-            teleportTo(sp, ctx.arena.lobby);
-            setRespawn(sp, ctx.arena.lobby, ctx.battleLevel);
-            BombardmentManager.stop(sp);
-            TeamManager.clearTeam(sp);
-            ScoreManager.clearPlayer(sp.getUUID());
-            PLAYER_MATCH.remove(sp.getUUID());
-            PENDING_SPAWN_INDEX.remove(sp.getUUID());
-        });
-        resetMatch(ctx);
-    }
-
-    private static void resetMatch(MatchContext ctx) {
-        BattleInstanceWorldService.releaseInstance(ctx.battleLevel, ctx.arena);
-        ctx.session = null;
-        ctx.phase = Phase.WAITING;
-        ctx.winner = TeamId.SPECTATOR;
-        ctx.countdownTicks = 0;
-        ctx.endingTicks = 0;
-        ctx.lastSyncedPhase = -1;
-        ctx.outsideAreaTicks.clear();
-        // 只清本局参与者。原实现在这里调用全局 ScoreManager.reset()，
-        // 多个 arena 并行时任意一局结束都会把其他局的分数一起抹掉。
-        ctx.participants.forEach(ScoreManager::clearPlayer);
-        ctx.participants.forEach(PLAYER_MATCH::remove);
-        ctx.participants.clear();
-        ctx.pendingEndWinner = null;
-        ctx.battleLevel = ctx.templateLevel;
+        // 必须先还原再传送：startEnding() 清过背包，这里不还原就等于装备被吞（removeParticipant 内部处理）
+        for (ServerPlayer sp : participants(ctx)) {
+            removeParticipant(ctx, sp, false);
+        }
+        releaseMatch(ctx);
     }
 
     private static void sendClientReset(ServerPlayer sp) {
@@ -684,21 +1102,27 @@ public final class BattlefieldGameManager {
 
     private static void ensureSession(MatchContext ctx) {
         if (ctx.session != null) return;
-        GameSession s = new GameSession(ctx.battleLevel, copySectors(ctx.arena.sectors), ctx.arena.military, ctx.arena.addMilitary, ctx.arena.timeMinutes);
+        GameSession s = new GameSession(ctx.battleLevel, copySectors(ctx.arena.sectors, ctx.dx(), ctx.dz()),
+                ctx.arena.military, ctx.arena.addMilitary, ctx.arena.timeMinutes);
         ctx.session = s;
         Sector cur = s.currentSector();
         if (cur != null) {
-            BattlefieldNet.sendSectorAreas(ctx.session.level, ctx.session.currentSectorIndex, cur.attackerAreas, cur.defenderAreas);
+            BattlefieldNet.sendSectorAreas(participants(ctx), ctx.session.currentSectorIndex, cur.attackerAreas, cur.defenderAreas);
         }
     }
 
-    private static List<Sector> copySectors(List<Sector> sectors) {
+    /** 每局一份独立的据点对象；实例化对局顺带把模板坐标平移到槽位。 */
+    private static List<Sector> copySectors(List<Sector> sectors, double dx, double dz) {
         return sectors.stream().map(s -> {
             List<CapturePoint> points = s.points.stream()
-                    .map(p -> new CapturePoint(p.id, p.x, p.y, p.z, p.radius))
+                    .map(p -> new CapturePoint(p.id, p.x + dx, p.y, p.z + dz, p.radius))
                     .toList();
-            return new Sector(s.id, points, List.copyOf(s.attackerAreas), List.copyOf(s.defenderAreas));
+            return new Sector(s.id, points, shift(s.attackerAreas, dx, dz), shift(s.defenderAreas, dx, dz));
         }).toList();
+    }
+
+    private static List<Sector.AreaRect> shift(List<Sector.AreaRect> rects, double dx, double dz) {
+        return rects.stream().map(r -> new Sector.AreaRect(r.x1() + dx, r.z1() + dz, r.x2() + dx, r.z2() + dz)).toList();
     }
 
     private static void checkWinConditionBySector(MatchContext ctx) {
@@ -748,7 +1172,7 @@ public final class BattlefieldGameManager {
         String overlaySub = "";
         int overlayTicks = 0;
         if (ctx.phase == Phase.COUNTDOWN) {
-            overlayTitle = "对局 " + ctx.arenaId + " 即将开始";
+            overlayTitle = "对局 " + ctx.matchId + " 即将开始";
             overlaySub = "倒计时";
             overlayTicks = ctx.countdownTicks;
         } else if (ctx.phase == Phase.ENDING) {
@@ -839,9 +1263,16 @@ public final class BattlefieldGameManager {
         });
     }
 
+    /** 按本局参与者的阵营计数（原实现按 battleLevel 内的实体计数，不在对局世界里的参与者会被漏掉）。 */
     private static TeamId autoAssignWithLimit(MatchContext ctx, ServerPlayer player) {
-        long atk = countParticipantsInTeam(ctx, TeamId.ATTACKERS);
-        long def = countParticipantsInTeam(ctx, TeamId.DEFENDERS);
+        long atk = 0;
+        long def = 0;
+        for (ServerPlayer sp : participants(ctx)) {
+            if (sp == player) continue;
+            TeamId t = TeamManager.getTeam(sp);
+            if (t == TeamId.ATTACKERS) atk++;
+            else if (t == TeamId.DEFENDERS) def++;
+        }
 
         TeamId pick;
         if (atk >= ctx.arena.attackNumber && def >= ctx.arena.defendNumber) {
@@ -857,88 +1288,10 @@ public final class BattlefieldGameManager {
         return pick;
     }
 
-    private static long countParticipantsInTeam(MatchContext ctx, TeamId teamId) {
-        return ctx.participants.stream()
-                .map(ctx.battleLevel::getPlayerByUUID)
-                .filter(Objects::nonNull)
-                .filter(sp -> TeamManager.getTeam((ServerPlayer) sp) == teamId)
-                .count();
-    }
-
     private static byte toClientTeamCode(TeamId teamId) {
         if (teamId == TeamId.ATTACKERS) return 0;
         if (teamId == TeamId.DEFENDERS) return 1;
         return 2;
-    }
-
-    private static void teleportToTeamSpawn(MatchContext ctx, ServerPlayer player, TeamId teamId) {
-        if (teamId == TeamId.ATTACKERS) {
-            teleportToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
-            setRespawnToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
-        } else if (teamId == TeamId.DEFENDERS) {
-            teleportToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
-            setRespawnToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
-        }
-    }
-
-    private static void ensureConfig(ServerLevel defaultLevel) {
-        if (config == null || MATCHES.isEmpty()) {
-            loadConfig(defaultLevel);
-        }
-    }
-
-    private static ServerLevel resolveBattleLevel(ServerLevel defaultLevel, String world) {
-        var id = net.minecraft.resources.ResourceLocation.tryParse(world);
-        if (id == null) return defaultLevel;
-        ServerLevel level = defaultLevel.getServer().getLevel(net.minecraft.resources.ResourceKey.create(net.minecraft.core.registries.Registries.DIMENSION, id));
-        return level != null ? level : defaultLevel;
-    }
-
-    /**
-     * 传送统一入口。解析顺序：
-     * <ol>
-     *   <li>原版维度已加载 —— 直接 NMS 传送，最快且不受插件干扰；</li>
-     *   <li>维度未加载 / 只存在于 Bukkit 侧 —— 按世界名解析后交给 Bukkit（会触发世界加载）；</li>
-     *   <li>都解析不到 —— 告警并取消。</li>
-     * </ol>
-     * 原实现在第 2 步失败时会退回 fallbackLevel，把玩家静默丢进错误的维度
-     * （sectors.json 写成 minecraft:world 时就靠这个"兜底"掩盖了配置错误）。
-     */
-    private static void teleportTo(ServerPlayer player, SectorConfigLoader.Position pos) {
-        if (pos == null) return;
-
-        var server = player.getServer();
-        if (server == null) return;
-
-        ServerLevel level = pos.resolveLevel(server, null);
-        if (level != null) {
-            player.teleportTo(level, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
-            return;
-        }
-
-        if (MohistTeleport.teleportToWorld(player, pos.world(), pos.x(), pos.y(), pos.z(),
-                player.getYRot(), player.getXRot())) {
-            return;
-        }
-
-        Battlefield.LOGGER.warn("[Battlefield] 世界 '{}' 无法解析，已取消传送（玩家 {}）",
-                pos.world(), player.getGameProfile().getName());
-    }
-
-    private static void setRespawn(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel fallbackLevel) {
-        if (pos == null) return;
-        ServerLevel level = pos.resolveLevel(player.getServer(), fallbackLevel != null ? fallbackLevel : player.serverLevel());
-        player.setRespawnPosition(level.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
-    }
-
-    private static void teleportToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
-        if (pos == null || battleLevel == null) return;
-        player.teleportTo(battleLevel, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
-    }
-
-    private static void setRespawnToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
-        if (pos == null || battleLevel == null) return;
-        player.setRespawnPosition(battleLevel.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
     }
 
     /** 把 ctx.participants 解析成在线 ServerPlayer 列表，避免各处重复写一遍 stream 管道。 */
@@ -959,6 +1312,12 @@ public final class BattlefieldGameManager {
         }
     }
 
+    private static void forEachEntered(MatchContext ctx, java.util.function.Consumer<ServerPlayer> action) {
+        for (ServerPlayer sp : participants(ctx)) {
+            if (ctx.entered.contains(sp.getUUID())) action.accept(sp);
+        }
+    }
+
     private static void keepPlayerFed(ServerPlayer sp) {
         var food = sp.getFoodData();
         food.setFoodLevel(20);
@@ -967,10 +1326,7 @@ public final class BattlefieldGameManager {
     }
 
     private static String participantNames(MatchContext ctx, TeamId teamId) {
-        if (ctx.battleLevel.getServer() == null) return "";
-        return ctx.participants.stream()
-                .map(id -> ctx.battleLevel.getServer().getPlayerList().getPlayer(id))
-                .filter(Objects::nonNull)
+        return participants(ctx).stream()
                 .filter(sp -> TeamManager.getTeam(sp) == teamId)
                 .map(Player::getScoreboardName)
                 .collect(Collectors.joining(", "));
@@ -1018,44 +1374,80 @@ public final class BattlefieldGameManager {
         ctx.outsideAreaTicks.keySet().removeIf(id -> s.level.getPlayerByUUID(id) == null);
     }
 
+    @Nullable
     private static MatchContext findContext(UUID playerId) {
-        String arenaId = PLAYER_MATCH.get(playerId);
-        return arenaId == null ? null : MATCHES.get(arenaId);
+        String matchId = PLAYER_MATCH.get(playerId);
+        return matchId == null ? null : MATCHES.get(matchId);
     }
 
-    private static MatchContext getOrCreateMatch(ServerLevel defaultLevel, String arenaId) {
-        MatchContext existing = MATCHES.get(arenaId);
-        if (existing != null) return existing;
-
-        var arena = config.getArena(arenaId);
-        if (arena == null) return null;
-        ServerLevel templateLevel = resolveBattleLevel(defaultLevel, arena.templateWorld);
-        if (templateLevel == null) return null;
-
-        MatchContext created = new MatchContext(arena.areaName, arena, templateLevel, templateLevel);
-        MATCHES.put(arena.areaName, created);
-        return created;
+    @Nullable
+    private static SectorConfigLoader.Position defaultLobby() {
+        if (config == null) return null;
+        var arena = config.getArena(null);
+        return arena == null ? null : arena.lobby;
     }
 
-    private static void prepareBattleWorld(MatchContext ctx) {
-        if (ctx.session != null) return;
-        if (!ctx.arena.useTemporaryWorld) {
-            ctx.battleLevel = ctx.templateLevel;
-            BattleInstanceWorldService.preloadChunks(ctx.battleLevel, ctx.arena);
-            return;
-        }
+    // ===================================================================================
+    // 对外查询（供计分、友伤、小队、信标、包处理使用）
+    // ===================================================================================
 
-        ServerLevel instance = BattleInstanceWorldService.createInstance(ctx.templateLevel, ctx.arenaId, ctx.arena);
-        if (instance != null) {
-            ctx.battleLevel = instance;
-        } else {
-            ctx.battleLevel = ctx.templateLevel;
-        }
-        BattleInstanceWorldService.preloadChunks(ctx.battleLevel, ctx.arena);
+    @Nullable
+    public static String getPlayerMatchId(UUID playerId) {
+        return PLAYER_MATCH.get(playerId);
     }
 
-    public static int reloadSectors(ServerLevel level) {
-        loadConfig(level);
+    public static boolean sameMatch(ServerPlayer a, ServerPlayer b) {
+        String ma = PLAYER_MATCH.get(a.getUUID());
+        return ma != null && ma.equals(PLAYER_MATCH.get(b.getUUID()));
+    }
+
+    /** 攻击者与受害者同属一局、该局正在进行、两人都已进场。 */
+    public static boolean isCombatScored(ServerPlayer attacker, ServerPlayer victim) {
+        if (!sameMatch(attacker, victim)) return false;
+        MatchContext ctx = findContext(attacker.getUUID());
+        return ctx != null && ctx.phase == Phase.RUNNING
+                && ctx.entered.contains(attacker.getUUID()) && ctx.entered.contains(victim.getUUID());
+    }
+
+    public static boolean isEnteredParticipant(ServerPlayer player) {
+        MatchContext ctx = findContext(player.getUUID());
+        return ctx != null && ctx.entered.contains(player.getUUID());
+    }
+
+    /** 玩家在自己对局的世界里（信标只允许在这里放）。 */
+    public static boolean isInOwnMatchWorld(ServerPlayer player) {
+        MatchContext ctx = findContext(player.getUUID());
+        return ctx != null && ctx.entered.contains(player.getUUID()) && player.serverLevel() == ctx.battleLevel;
+    }
+
+    public static List<ServerPlayer> participantsOf(ServerPlayer player) {
+        MatchContext ctx = findContext(player.getUUID());
+        return ctx == null ? Collections.emptyList() : participants(ctx);
+    }
+
+    public static boolean canUseSquadActions(ServerPlayer player) {
+        MatchContext ctx = findContext(player.getUUID());
+        return ctx != null && ctx.phase != Phase.ENDING;
+    }
+
+    @Nullable
+    public static ServerLevel matchLevel(String matchId) {
+        MatchContext ctx = matchId == null ? null : MATCHES.get(matchId);
+        return ctx == null ? null : ctx.battleLevel;
+    }
+
+    @Nullable
+    public static ServerLevel matchLevelOfBeacon(UUID beaconUuid) {
+        return matchLevel(RespawnBeaconManager.matchOfBeacon(beaconUuid));
+    }
+
+    // ===================================================================================
+    // 命令
+    // ===================================================================================
+
+    /** @return 总战线数；解析失败返回 -1 */
+    public static int reloadSectors(MinecraftServer server) {
+        if (!loadConfig(server)) return -1;
         return config.arenas.values().stream().mapToInt(a -> a.sectors.size()).sum();
     }
 
@@ -1069,8 +1461,69 @@ public final class BattlefieldGameManager {
         return Collections.unmodifiableSet(config.arenas.keySet());
     }
 
-    public static String getPlayerAreaName(UUID playerId) {
-        return PLAYER_MATCH.get(playerId);
+    public static Set<String> matchIds() {
+        return Collections.unmodifiableSet(MATCHES.keySet());
+    }
+
+    public static List<String> statusLines(MinecraftServer server) {
+        List<String> lines = new ArrayList<>();
+        lines.add("对局 " + MATCHES.size() + " 个，还原任务 " + SlotRestoreService.activeJobs() + " 个");
+        for (MatchContext ctx : MATCHES.values()) {
+            String prep = ctx.ready ? "" : "（准备中 " + (ctx.restoreJob == null ? 0 : Math.round(ctx.restoreJob.progress() * 100)) + "%）";
+            lines.add(" - " + ctx.matchId + " " + ctx.phase + prep + " 人数 " + ctx.participants.size()
+                    + (ctx.slot == null ? " 世界 " + ctx.battleLevel.dimension().location()
+                    : " 槽位 #" + ctx.slot.index + " @x=" + (ctx.geometry.originChunkX() << 4))
+                    + (ctx.session == null ? "" : " 票数 " + ctx.session.attackerTickets + " 战线 " + ctx.session.currentSectorIndex));
+            for (ServerPlayer sp : participants(ctx)) {
+                lines.add("     " + sp.getScoreboardName() + " " + TeamManager.getTeam(sp) + " 小队" + SquadManager.getSquad(sp)
+                        + " 分数 " + ScoreManager.getScore(sp.getUUID()) + " 小队分 " + SquadManager.getSquadScore(sp)
+                        + (ctx.entered.contains(sp.getUUID()) ? " @" + sp.serverLevel().dimension().location()
+                        + String.format(" (%.0f, %.0f, %.0f)", sp.getX(), sp.getY(), sp.getZ()) : " 未进场"));
+            }
+        }
+        for (SlotRegistry.Slot s : SlotRegistry.get(server).all()) {
+            SlotRestoreJob job = SlotRestoreService.jobFor(s.index);
+            lines.add(" · 槽位 #" + s.index + " " + s.arena + (SLOTS_IN_USE.contains(s.index) ? " 使用中" : " 空闲")
+                    + (s.clean() ? " 干净" : " 脏") + (job != null ? " 还原中 " + Math.round(job.progress() * 100) + "%" : ""));
+        }
+        return lines;
+    }
+
+    /** 管理员强制开局：跳过最少人数，地图必须已就绪。 */
+    public static String forceStart(String matchId) {
+        MatchContext ctx = MATCHES.get(matchId);
+        if (ctx == null) return "未找到对局 " + matchId;
+        if (!ctx.ready) return "对局 " + matchId + " 地图尚未就绪";
+        if (ctx.phase != Phase.WAITING) return "对局 " + matchId + " 已在 " + ctx.phase + " 阶段";
+        if (ctx.participants.isEmpty()) return "对局 " + matchId + " 没有参与者";
+        beginCountdown(ctx);
+        return "对局 " + matchId + " 已强制开始倒计时";
+    }
+
+    public static String forceEnd(String matchId, TeamId winner) {
+        MatchContext ctx = MATCHES.get(matchId);
+        if (ctx == null) return "未找到对局 " + matchId;
+        if (ctx.phase == Phase.ENDING) return "对局 " + matchId + " 已在结算";
+        if (ctx.phase != Phase.RUNNING) {
+            abortMatch(ctx, "管理员结束");
+            return "对局 " + matchId + " 未开打，已直接解散";
+        }
+        startEnding(ctx, winner);
+        return "对局 " + matchId + " 已结束，胜方 " + winner;
+    }
+
+    public static String restoreSlot(MinecraftServer server, int index) {
+        SlotRegistry registry = SlotRegistry.get(server);
+        SlotRegistry.Slot slot = registry.byIndex(index);
+        if (slot == null) return "槽位 #" + index + " 未分配";
+        if (SLOTS_IN_USE.contains(index)) return "槽位 #" + index + " 正被对局使用";
+        ensureConfig(server);
+        var arena = config.getArena(slot.arena);
+        if (arena == null || !arena.instanced()) return "槽位 #" + index + " 所属 arena '" + slot.arena + "' 已不在配置中";
+        ServerLevel level = BattleWorlds.resolve(server, arena.battleWorld);
+        if (level == null) return "战场维度未加载";
+        SlotRestoreService.schedule(level, slot, SlotGeometry.of(index, arena.templateBounds), TemplateStore.get(server, arena));
+        return "槽位 #" + index + " 已开始还原";
     }
 
     @SubscribeEvent

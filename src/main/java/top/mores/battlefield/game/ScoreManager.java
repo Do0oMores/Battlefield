@@ -82,7 +82,8 @@ public final class ScoreManager {
         PRE_HURT_REMAIN.remove(playerId);
         LAST_KILL_AWARD_TICK.remove(playerId);
         HEADSHOT_TICK.remove(playerId);
-        SquadScoreManager.clearAll();
+        // 小队分按对局清理（SquadManager.clearMatch）。原先这里调用 SquadScoreManager.clearAll()，
+        // 任何一名玩家离开任何一局都会把全服所有小队的分数清零。
     }
 
     public static int getScore(UUID playerId) {
@@ -114,6 +115,7 @@ public final class ScoreManager {
         ServerPlayer ownerPlayer = level.getServer().getPlayerList().getPlayer(owner);
         ServerPlayer victimPlayer = level.getServer().getPlayerList().getPlayer(victim);
         if (ownerPlayer == null || victimPlayer == null) return;
+        if (!BattlefieldGameManager.isCombatScored(ownerPlayer, victimPlayer)) return;
         if (TeamManager.isSameTeam(ownerPlayer, victimPlayer)) return;
 
         int rounded = Math.max(0, Math.round(damage));
@@ -125,6 +127,7 @@ public final class ScoreManager {
         ServerPlayer ownerPlayer = level.getServer().getPlayerList().getPlayer(owner);
         ServerPlayer victimPlayer = level.getServer().getPlayerList().getPlayer(victim);
         if (ownerPlayer == null || victimPlayer == null) return;
+        if (!BattlefieldGameManager.isCombatScored(ownerPlayer, victimPlayer)) return;
         if (TeamManager.isSameTeam(ownerPlayer, victimPlayer)) return;
 
         onKill(ownerPlayer, victimPlayer);
@@ -160,6 +163,8 @@ public final class ScoreManager {
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
         ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
         if (attacker == null) return;
+        // 只在同一局、该局进行中时计分：主城 PvP、倒计时、结算阶段、跨局伤害一律不算
+        if (!BattlefieldGameManager.isCombatScored(attacker, victim)) return;
         if (CombatRules.isFriendlyFire(attacker, victim)) return;
 
         long now = victim.serverLevel().getGameTime();
@@ -184,6 +189,8 @@ public final class ScoreManager {
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
         ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
         if (attacker == null) return;
+        // 只在同一局、该局进行中时计分：主城 PvP、倒计时、结算阶段、跨局伤害一律不算
+        if (!BattlefieldGameManager.isCombatScored(attacker, victim)) return;
         if (CombatRules.isFriendlyFire(attacker, victim)) return;
 
         long now = victim.serverLevel().getGameTime();
@@ -225,6 +232,8 @@ public final class ScoreManager {
         if (!(event.getEntity() instanceof ServerPlayer victim)) return;
         ServerPlayer attacker = CombatRules.resolveAttacker(event.getSource());
         if (attacker == null) return;
+        // 只在同一局、该局进行中时计分：主城 PvP、倒计时、结算阶段、跨局伤害一律不算
+        if (!BattlefieldGameManager.isCombatScored(attacker, victim)) return;
         if (CombatRules.isFriendlyFire(attacker, victim)) return;
         long now = victim.serverLevel().getGameTime();
         Long hsTick = HEADSHOT_TICK.get(victim.getUUID());
@@ -258,11 +267,11 @@ public final class ScoreManager {
         int victimSquad = SquadManager.getSquad(victim);
         if (victimTeam == TeamId.SPECTATOR || victimSquad <= 0) return;
 
-        String areaName = BattlefieldGameManager.getPlayerAreaName(victim.getUUID());
-        if (areaName == null || areaName.isBlank()) {
-            areaName = "default";
+        String matchId = BattlefieldGameManager.getPlayerMatchId(victim.getUUID());
+        if (matchId == null || matchId.isBlank()) {
+            matchId = "default";
         }
-        String key = areaName + "-" + victimTeam.name() + "-" + victimSquad;
+        String key = matchId + "-" + victimTeam.name() + "-" + victimSquad;
         Map<String, KillWindow> map = STREAK_SQUAD_KILLS.computeIfAbsent(attackerId, k -> new HashMap<>());
         KillWindow win = map.computeIfAbsent(key, k -> new KillWindow(new HashSet<>()));
         win.killedVictims().add(victim.getUUID());
@@ -294,18 +303,21 @@ public final class ScoreManager {
         LAST_BONUS_TICK.put(playerId, nowTick);
 
         // 4) 并行 pending：UUID -> EnumMap<reason, PendingToast>
+        // toast 合并 / flush 统一用服务器 tick 计数。原实现这里记的是 level.getGameTime()（世界年龄），
+        // flush 却拿 server.getTickCount()（本次开服 tick 数）去减，存档越老差得越多，toast 永远不按时发出。
+        long toastTick = player.server.getTickCount();
         EnumMap<ScoreReason, PendingToast> map =
                 PENDING_TOASTS.computeIfAbsent(playerId, k -> new EnumMap<>(ScoreReason.class));
 
         PendingToast p = map.get(reason);
-        if (p != null && (nowTick - p.lastTick) <= BattlefieldServerConfig.get().scoreToastMergeWindowTicks) {
+        if (p != null && (toastTick - p.lastTick) <= BattlefieldServerConfig.get().scoreToastMergeWindowTicks) {
             p.amount += score;
-            p.lastTick = nowTick;
+            p.lastTick = toastTick;
         } else {
             if (p != null) {
                 sendToast(level, player, p.amount, reason);
             }
-            map.put(reason, new PendingToast(score, nowTick));
+            map.put(reason, new PendingToast(score, toastTick));
         }
     }
 

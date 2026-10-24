@@ -26,7 +26,7 @@ public class RespawnBeaconItem extends Item {
             return InteractionResult.SUCCESS;
         }
 
-        if (BattlefieldGameManager.getPlayerAreaName(sp.getUUID()) == null) {
+        if (!BattlefieldGameManager.isInOwnMatchWorld(sp)) {
             sp.displayClientMessage(Component.literal("当前不在战局中，无法部署复活信标"), true);
             return InteractionResult.FAIL;
         }

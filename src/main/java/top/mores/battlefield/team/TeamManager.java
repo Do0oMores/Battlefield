@@ -32,11 +32,27 @@ public final class TeamManager {
         SquadManager.onTeamChanged(p, oldTeam, TeamId.SPECTATOR);
     }
 
+    /**
+     * 同一局、同一阵营才算队友。只比较 TeamId 的话，两局并行时 A 局攻方与 B 局攻方会被判为队友互相免伤；
+     * 不在任何对局里的玩家（含崩服后带着残留阵营的玩家）一律不是队友。
+     */
     public static boolean isSameTeam(ServerPlayer a, ServerPlayer b) {
         if (a == null || b == null) return false;
+        if (!top.mores.battlefield.game.BattlefieldGameManager.sameMatch(a, b)) return false;
         TeamId ta = getTeam(a);
         TeamId tb = getTeam(b);
         return ta != TeamId.SPECTATOR && ta == tb;
+    }
+
+    /** 开服时调用：对局不会跨重启存活，存档里残留的阵营全部作废。 */
+    public static int clearAllStale(ServerLevel anyLevel) {
+        TeamSavedData data = TeamSavedData.get(anyLevel);
+        int n = data.getTeams().size();
+        if (n > 0) {
+            data.getTeams().clear();
+            data.setDirty();
+        }
+        return n;
     }
 
     /**

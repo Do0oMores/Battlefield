@@ -4,6 +4,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.PacketDistributor;
+import top.mores.battlefield.game.BattlefieldGameManager;
 import top.mores.battlefield.server.BackpackBridge;
 
 import java.util.List;
@@ -30,6 +31,10 @@ public class C2SRequestBackpackPreview {
         ctx.enqueueWork(() -> {
             ServerPlayer player = ctx.getSender();
             if (player == null) return;
+            // 槽位与部署一致只允许 1..9；每次请求都会在主线程反射调用背包插件，必须限频
+            if (msg.bpSlot < 1 || msg.bpSlot > 9) return;
+            if (BattlefieldGameManager.getPlayerMatchId(player.getUUID()) == null) return;
+            if (!PacketRateLimiter.allow(player, "backpack_preview", 4)) return;
 
             List<ItemStack> preview = BackpackBridge.getBackpackPreview(player, msg.bpSlot);
             BattlefieldNet.CH.send(PacketDistributor.PLAYER.with(() -> player),

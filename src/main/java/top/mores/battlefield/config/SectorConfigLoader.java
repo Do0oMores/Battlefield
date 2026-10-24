@@ -24,6 +24,9 @@ public final class SectorConfigLoader {
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
+    /** 实例化对局默认使用的战场维度（模组自带的 datapack 维度，见 data/battlefield/dimension/battle.json）。 */
+    public static final String DEFAULT_BATTLE_WORLD = "battlefield:battle";
+
     private SectorConfigLoader() {
     }
 
@@ -62,11 +65,62 @@ public final class SectorConfigLoader {
         public Vec3 toVec3() {
             return new Vec3(x, y, z);
         }
+
+        public Position offset(double dx, double dz) {
+            return new Position(world, x + dx, y, z + dz);
+        }
+    }
+
+    /**
+     * 对局如何获得自己的地图。
+     * <ul>
+     *   <li>{@link #STATIC}：直接在 {@code world} 指定的现有世界里打，同一 arena 同时只能有一局，结束后不还原地图；</li>
+     *   <li>{@link #INSTANCED}：从只读模板 {@code templates/<template>/} 还原到战场维度的某个「槽位」里，
+     *   同一 arena 可以并行多局（每局一个槽位），结束后按模板逐方块还原。</li>
+     * </ul>
+     */
+    public enum Mode {STATIC, INSTANCED}
+
+    /** 模板在原世界中的方块坐标范围（含两端）。 */
+    public record Bounds(int minX, int minZ, int maxX, int maxZ) {
+        public int minChunkX() {
+            return minX >> 4;
+        }
+
+        public int minChunkZ() {
+            return minZ >> 4;
+        }
+
+        public int maxChunkX() {
+            return maxX >> 4;
+        }
+
+        public int maxChunkZ() {
+            return maxZ >> 4;
+        }
+
+        public int widthChunks() {
+            return maxChunkX() - minChunkX() + 1;
+        }
+
+        public int depthChunks() {
+            return maxChunkZ() - minChunkZ() + 1;
+        }
     }
 
     public static final class ArenaConfig {
         public final String areaName;
-        public final String templateWorld;
+        public final Mode mode;
+        /** STATIC：对局所在世界；INSTANCED：仅作记录（模板来源世界），运行时不使用。 */
+        public final String world;
+        /** INSTANCED：模板目录名（config/battlefield/templates/&lt;template&gt;）。 */
+        public final String template;
+        /** INSTANCED：承载槽位的战场维度。 */
+        public final String battleWorld;
+        public final int maxConcurrentMatches;
+        public final int prewarmSlots;
+        /** INSTANCED：需要还原的模板范围（已含边距，已对齐区块）。 */
+        public final Bounds templateBounds;
         public final int timeMinutes;
         public final int military;
         public final int addMilitary;
@@ -74,9 +128,7 @@ public final class SectorConfigLoader {
         public final int attackNumber;
         public final int defendNumber;
         public final int minPlayerNumber;
-        public final boolean useTemporaryWorld;
-        public final int preloadRadiusChunks;
-        public final String instanceWorldPrefix;
+        /** INSTANCED 下 wait / 两个出生点是模板坐标；lobby 永远是真实世界坐标（离场兜底点）。 */
         public final Position wait;
         public final Position lobby;
         public final Position firstAttackSpawnPoint;
@@ -85,13 +137,20 @@ public final class SectorConfigLoader {
         public final List<String> loseCommand;
         public final List<Sector> sectors;
 
-        public ArenaConfig(String areaName, String templateWorld, int timeMinutes, int military, int addMilitary,
+        public ArenaConfig(String areaName, Mode mode, String world, String template, String battleWorld,
+                           int maxConcurrentMatches, int prewarmSlots, Bounds templateBounds,
+                           int timeMinutes, int military, int addMilitary,
                            int maxPlayerNumber, int attackNumber, int defendNumber, int minPlayerNumber,
-                           boolean useTemporaryWorld, int preloadRadiusChunks, String instanceWorldPrefix,
                            Position wait, Position lobby, Position firstAttackSpawnPoint, Position firstDefendSpawnPoint,
                            List<String> winCommand, List<String> loseCommand, List<Sector> sectors) {
             this.areaName = areaName;
-            this.templateWorld = templateWorld;
+            this.mode = mode;
+            this.world = world;
+            this.template = template;
+            this.battleWorld = battleWorld;
+            this.maxConcurrentMatches = maxConcurrentMatches;
+            this.prewarmSlots = prewarmSlots;
+            this.templateBounds = templateBounds;
             this.timeMinutes = timeMinutes;
             this.military = military;
             this.addMilitary = addMilitary;
@@ -99,9 +158,6 @@ public final class SectorConfigLoader {
             this.attackNumber = attackNumber;
             this.defendNumber = defendNumber;
             this.minPlayerNumber = minPlayerNumber;
-            this.useTemporaryWorld = useTemporaryWorld;
-            this.preloadRadiusChunks = preloadRadiusChunks;
-            this.instanceWorldPrefix = instanceWorldPrefix;
             this.wait = wait;
             this.lobby = lobby;
             this.firstAttackSpawnPoint = firstAttackSpawnPoint;
@@ -109,6 +165,10 @@ public final class SectorConfigLoader {
             this.winCommand = winCommand;
             this.loseCommand = loseCommand;
             this.sectors = sectors;
+        }
+
+        public boolean instanced() {
+            return mode == Mode.INSTANCED;
         }
     }
 
@@ -136,6 +196,12 @@ public final class SectorConfigLoader {
         String id;
         String templateWorld;
         String world;
+        String template;
+        String battleWorld;
+        Integer maxConcurrentMatches;
+        Integer prewarmSlots;
+        BoundsJson templateBounds;
+        Integer templateMarginBlocks;
         Integer time;
         Integer military;
         Integer addMilitary;
@@ -144,8 +210,6 @@ public final class SectorConfigLoader {
         Integer defendNumber;
         Integer minPlayerNumber;
         Boolean useTemporaryWorld;
-        Integer preloadRadiusChunks;
-        String instanceWorldPrefix;
         PositionJson wait;
         PositionJson lobby;
         PositionJson firstAttackSpawnPoint;
@@ -153,6 +217,10 @@ public final class SectorConfigLoader {
         List<String> winCommand;
         List<String> loseCommand;
         List<SectorJson> sectors;
+    }
+
+    private static class BoundsJson {
+        Integer minX, minZ, maxX, maxZ;
     }
 
     private static class SectorJson {
@@ -236,7 +304,7 @@ public final class SectorConfigLoader {
     }
 
     private static ArenaConfig parseArena(String areaName, ArenaJson arena, Root rootFallback) {
-        String templateWorld = "minecraft:overworld";
+        String world = "minecraft:overworld";
         int timeMinutes = 20;
         int military = 300;
         int addMilitary = 0;
@@ -244,9 +312,6 @@ public final class SectorConfigLoader {
         int attackNumber;
         int defendNumber;
         int minPlayerNumber = 2;
-        boolean useTemporaryWorld = true;
-        int preloadRadiusChunks = 6;
-        String instanceWorldPrefix = "bf_inst";
 
         Position wait = new Position("minecraft:overworld", 0.5, 64, 0.5);
         Position lobby = new Position("minecraft:overworld", 0.5, 64, 0.5);
@@ -256,17 +321,14 @@ public final class SectorConfigLoader {
         List<String> loseCommand = Collections.emptyList();
         List<Sector> sectors;
 
-        String preferredTemplateWorld = arena == null ? null : firstNonBlank(arena.templateWorld, arena.world);
-        String fallbackTemplateWorld = rootFallback == null ? null : firstNonBlank(rootFallback.templateWorld, rootFallback.world);
-        templateWorld = read(preferredTemplateWorld, fallbackTemplateWorld, templateWorld);
+        String preferredWorld = arena == null ? null : firstNonBlank(arena.world, arena.templateWorld);
+        String fallbackWorld = rootFallback == null ? null : firstNonBlank(rootFallback.world, rootFallback.templateWorld);
+        world = read(preferredWorld, fallbackWorld, world);
         timeMinutes = readPositive(arena == null ? null : arena.time, rootFallback == null ? null : rootFallback.time, timeMinutes);
         military = readPositive(arena == null ? null : arena.military, rootFallback == null ? null : rootFallback.military, military);
         addMilitary = readNonNegative(arena == null ? null : arena.addMilitary, rootFallback == null ? null : rootFallback.addMilitary, addMilitary);
         maxPlayerNumber = readPositive(arena == null ? null : arena.maxPlayerNumber, rootFallback == null ? null : rootFallback.maxPlayerNumber, maxPlayerNumber);
         minPlayerNumber = Math.max(2, readPositive(arena == null ? null : arena.minPlayerNumber, rootFallback == null ? null : rootFallback.minPlayerNumber, minPlayerNumber));
-        useTemporaryWorld = readBoolean(arena == null ? null : arena.useTemporaryWorld, rootFallback == null ? null : null, useTemporaryWorld);
-        preloadRadiusChunks = Math.max(0, readNonNegative(arena == null ? null : arena.preloadRadiusChunks, rootFallback == null ? null : null, preloadRadiusChunks));
-        instanceWorldPrefix = read(arena == null ? null : arena.instanceWorldPrefix, rootFallback == null ? null : null, instanceWorldPrefix);
 
         attackNumber = Math.max(1, maxPlayerNumber / 2);
         defendNumber = Math.max(1, maxPlayerNumber - attackNumber);
@@ -290,9 +352,79 @@ public final class SectorConfigLoader {
         if (sectorJson == null && rootFallback != null) sectorJson = rootFallback.sectors;
         sectors = parseSectors(sectorJson);
 
-        return new ArenaConfig(areaName, templateWorld, timeMinutes, military, addMilitary, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
-                useTemporaryWorld, preloadRadiusChunks, instanceWorldPrefix,
+        // ===== 地图实例化 =====
+        String template = arena == null ? null : arena.template;
+        Mode mode = (template != null && !template.isBlank()) ? Mode.INSTANCED : Mode.STATIC;
+        if (arena != null && Boolean.TRUE.equals(arena.useTemporaryWorld) && mode == Mode.STATIC) {
+            // PR #43 的「每局复制整个世界目录」已移除（主线程复制 + createWorld 会卡服，见地图方案文档）
+            Battlefield.LOGGER.warn("[Battlefield] arena '{}' 的 useTemporaryWorld 已废弃并被忽略；"
+                    + "如需每局独立地图，请改用 \"template\" 字段。本 arena 以 STATIC 模式运行于 {}", areaName, world);
+        }
+        String battleWorld = read(arena == null ? null : arena.battleWorld, null, DEFAULT_BATTLE_WORLD);
+        int maxConcurrent = mode == Mode.INSTANCED
+                ? readPositive(arena == null ? null : arena.maxConcurrentMatches, null, 2)
+                : 1;
+        int prewarm = mode == Mode.INSTANCED
+                ? Math.min(maxConcurrent, readNonNegative(arena == null ? null : arena.prewarmSlots, null, 1))
+                : 0;
+        int margin = readNonNegative(arena == null ? null : arena.templateMarginBlocks, null, 96);
+        Bounds bounds = mode == Mode.INSTANCED
+                ? resolveBounds(arena.templateBounds, margin, sectors, wait, firstAttackSpawnPoint, firstDefendSpawnPoint)
+                : null;
+
+        return new ArenaConfig(areaName, mode, world, mode == Mode.INSTANCED ? template.trim() : null, battleWorld,
+                maxConcurrent, prewarm, bounds,
+                timeMinutes, military, addMilitary, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
                 wait, lobby, firstAttackSpawnPoint, firstDefendSpawnPoint, winCommand, loseCommand, sectors);
+    }
+
+    /**
+     * 模板需要还原的范围：显式配置优先；否则取所有战线区域、据点、出生点的外包矩形再外扩 margin，
+     * 让玩家在可活动区域边缘向外看时仍能看到地形（而不是虚空）。最后对齐到区块边界。
+     */
+    private static Bounds resolveBounds(BoundsJson explicit, int margin, List<Sector> sectors, Position... points) {
+        if (explicit != null && explicit.minX != null && explicit.minZ != null && explicit.maxX != null && explicit.maxZ != null) {
+            return alignToChunks(Math.min(explicit.minX, explicit.maxX), Math.min(explicit.minZ, explicit.maxZ),
+                    Math.max(explicit.minX, explicit.maxX), Math.max(explicit.minZ, explicit.maxZ));
+        }
+
+        double minX = Double.MAX_VALUE, minZ = Double.MAX_VALUE, maxX = -Double.MAX_VALUE, maxZ = -Double.MAX_VALUE;
+        for (Position p : points) {
+            if (p == null) continue;
+            minX = Math.min(minX, p.x());
+            maxX = Math.max(maxX, p.x());
+            minZ = Math.min(minZ, p.z());
+            maxZ = Math.max(maxZ, p.z());
+        }
+        for (Sector s : sectors) {
+            for (Sector.AreaRect r : s.attackerAreas) {
+                minX = Math.min(minX, Math.min(r.x1(), r.x2()));
+                maxX = Math.max(maxX, Math.max(r.x1(), r.x2()));
+                minZ = Math.min(minZ, Math.min(r.z1(), r.z2()));
+                maxZ = Math.max(maxZ, Math.max(r.z1(), r.z2()));
+            }
+            for (Sector.AreaRect r : s.defenderAreas) {
+                minX = Math.min(minX, Math.min(r.x1(), r.x2()));
+                maxX = Math.max(maxX, Math.max(r.x1(), r.x2()));
+                minZ = Math.min(minZ, Math.min(r.z1(), r.z2()));
+                maxZ = Math.max(maxZ, Math.max(r.z1(), r.z2()));
+            }
+            for (CapturePoint p : s.points) {
+                minX = Math.min(minX, p.x - p.radius);
+                maxX = Math.max(maxX, p.x + p.radius);
+                minZ = Math.min(minZ, p.z - p.radius);
+                maxZ = Math.max(maxZ, p.z + p.radius);
+            }
+        }
+        if (minX > maxX) {
+            minX = maxX = minZ = maxZ = 0;
+        }
+        return alignToChunks((int) Math.floor(minX) - margin, (int) Math.floor(minZ) - margin,
+                (int) Math.ceil(maxX) + margin, (int) Math.ceil(maxZ) + margin);
+    }
+
+    private static Bounds alignToChunks(int minX, int minZ, int maxX, int maxZ) {
+        return new Bounds(minX & ~15, minZ & ~15, maxX | 15, maxZ | 15);
     }
 
     private static String firstNonBlank(String first, String second) {
@@ -315,12 +447,6 @@ public final class SectorConfigLoader {
     private static int readNonNegative(Integer preferred, Integer fallback, int def) {
         if (preferred != null && preferred >= 0) return preferred;
         if (fallback != null && fallback >= 0) return fallback;
-        return def;
-    }
-
-    private static boolean readBoolean(Boolean preferred, Boolean fallback, boolean def) {
-        if (preferred != null) return preferred;
-        if (fallback != null) return fallback;
         return def;
     }
 

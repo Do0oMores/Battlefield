@@ -85,7 +85,7 @@ public class BeaconRespawnLogic {
         if (beacon == null || !beacon.isAlive()) return false;
 
         UUID squadId = SquadManager.getSquadUuid(player);
-        String matchId = BattlefieldGameManager.getPlayerAreaName(player.getUUID());
+        String matchId = BattlefieldGameManager.getPlayerMatchId(player.getUUID());
 
         if (squadId == null || matchId == null) return false;
         if (!squadId.equals(beacon.getSquadUuid())) return false;

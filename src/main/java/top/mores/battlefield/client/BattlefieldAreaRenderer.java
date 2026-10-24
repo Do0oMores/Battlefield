@@ -123,7 +123,7 @@ public final class BattlefieldAreaRenderer {
         }
 
         boolean wasOutside = outsideAreaTicks > 0;
-        if (BattlefieldAreaRules.isInsideMovableArea(myTeam, mc.player.getX(), mc.player.getZ())) {
+        if (BattlefieldAreaRules.isInsideRects(mc.player.getX(), mc.player.getZ(), myAreas)) {
             outsideAreaTicks = 0;
             outsideAreaVoicePending = false;
         } else {

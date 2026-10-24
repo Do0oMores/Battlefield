@@ -138,6 +138,15 @@ public final class MohistTeleport {
     public static boolean teleportToWorld(ServerPlayer sp, String worldName,
                                           double x, double y, double z,
                                           float yaw, float pitch) {
+        return teleportToWorld(sp, worldName, x, y, z, yaw, pitch, null);
+    }
+
+    /**
+     * @param onRejected Bukkit 侧拒绝传送（插件取消 PlayerTeleportEvent 等）时在主线程执行的兜底；可为 null
+     */
+    public static boolean teleportToWorld(ServerPlayer sp, String worldName,
+                                          double x, double y, double z,
+                                          float yaw, float pitch, Runnable onRejected) {
 
         final World world = resolveWorld(worldName);
         if (world == null) {
@@ -145,6 +154,8 @@ public final class MohistTeleport {
         }
 
         sp.server.execute(() -> {
+            // 排队期间玩家可能已经掉线：此时传送不会生效，交给登录时的「待返回」流程
+            if (sp.hasDisconnected()) return;
             Player bp = toBukkit(sp);
             if (bp == null) return;
 
@@ -155,6 +166,7 @@ public final class MohistTeleport {
             if (!bp.teleport(new Location(world, x, y, z, yaw, pitch))) {
                 Battlefield.LOGGER.warn("[Battlefield] Bukkit 传送被拒绝：{} @ {}, {}, {}（玩家 {}）",
                         world.getName(), x, y, z, sp.getGameProfile().getName());
+                if (onRejected != null) onRejected.run();
             }
         });
         return true;

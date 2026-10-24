@@ -21,7 +21,9 @@ public final class BattlefieldNet {
     }
 
     // 2：S2CBombardSmokePacket 由「逐玩家下发 r/g/b」改为「广播 ownerTeam」，字节布局已变
-    private static final String PROTOCOL = "2";
+    // 3：与 PR #43-#46 合并后消息表变了（新增部署界面、小队面板 3 个包，消息 id 整体后移），
+    //    而那批提交没有升协议号；旧客户端（无论来自哪条分支）一律在握手阶段拒绝，不再静默错位解包
+    private static final String PROTOCOL = "3";
     public static final SimpleChannel CH = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Battlefield.MODID, "main"),
             () -> PROTOCOL, PROTOCOL::equals, PROTOCOL::equals
@@ -150,9 +152,17 @@ public final class BattlefieldNet {
         CH.sendToServer(pkt);
     }
 
-    public static void sendSectorAreas(ServerLevel level, int sectorIndex,
+    /**
+     * 发给本局参与者。原先按维度广播：多个对局共用同一个战场维度（槽位）时，
+     * 一局推进战线会覆盖另一局所有人的区域框。
+     */
+    public static void sendSectorAreas(List<ServerPlayer> players, int sectorIndex,
                                        List<Sector.AreaRect> atk, List<Sector.AreaRect> def) {
-        sendToAllInLevel(level, buildSectorAreaPacket(sectorIndex, atk, def));
+        if (players.isEmpty()) return;
+        S2CSectorAreaPacket pkt = buildSectorAreaPacket(sectorIndex, atk, def);
+        for (ServerPlayer sp : players) {
+            sendToPlayer(sp, pkt);
+        }
     }
 
     /**

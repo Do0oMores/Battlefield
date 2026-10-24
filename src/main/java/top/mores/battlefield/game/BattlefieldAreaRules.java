@@ -2,7 +2,6 @@ package top.mores.battlefield.game;
 
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
-import top.mores.battlefield.client.ClientGameState;
 
 import java.util.List;
 
@@ -27,12 +26,8 @@ public final class BattlefieldAreaRules {
         return false;
     }
 
-    public static boolean isInsideMovableArea(byte myTeam, double x, double z) {
-        List<top.mores.battlefield.net.S2CSectorAreaPacket.AreaRect> rects =
-                (myTeam == 0) ? ClientGameState.attackerAreas :
-                        (myTeam == 1) ? ClientGameState.defenderAreas :
-                                java.util.Collections.emptyList();
-
+    /** 客户端用：按区域包里的矩形判断（通用类里不能引用 ClientGameState，专用服加载即 NoClassDefFoundError）。 */
+    public static boolean isInsideRects(double x, double z, List<top.mores.battlefield.net.S2CSectorAreaPacket.AreaRect> rects) {
         for (var rect : rects) {
             if (isInsideRect(x, z, rect.x1, rect.z1, rect.x2, rect.z2)) return true;
         }

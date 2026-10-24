@@ -95,6 +95,13 @@ public final class BattlefieldServerConfig {
         public final double v1MaxDamageRadius;
         public final float v1MaxDamage;
 
+        public final int slotBaseX;
+        public final int slotBaseZ;
+        public final int slotSpacingBlocks;
+        public final int maxSlots;
+        public final int restoreBudgetMillis;
+        public final int restoreChunkWindow;
+
         private Settings(int teamCap, int squadCap, int teamSquadCap,
                          int captureIntervalTicks, int scoreAwardIntervalTicks, int captureBaseStep, int captureBonusStep, int captureEmptyDecayStep, boolean captureDecayOnTie,
                          double areaRadiusScale, int outsideAreaKillTicks,
@@ -104,7 +111,9 @@ public final class BattlefieldServerConfig {
                          int scoreToastMergeWindowTicks, int scoreToastFlushAfterTicks,
                          double v1StartBackwardDistance, double v1StartHeightBase, int v1StartHeightRandom, double v1TargetMinHeightOffset,
                          double v1ArcHeightMin, double v1ArcHeightScale, int v1FlightTicks,
-                         double v1KillRadius, double v1MaxDamageRadius, float v1MaxDamage) {
+                         double v1KillRadius, double v1MaxDamageRadius, float v1MaxDamage,
+                         int slotBaseX, int slotBaseZ, int slotSpacingBlocks, int maxSlots,
+                         int restoreBudgetMillis, int restoreChunkWindow) {
             this.teamCap = teamCap;
             this.squadCap = squadCap;
             this.teamSquadCap = teamSquadCap;
@@ -140,6 +149,12 @@ public final class BattlefieldServerConfig {
             this.v1KillRadius = v1KillRadius;
             this.v1MaxDamageRadius = v1MaxDamageRadius;
             this.v1MaxDamage = v1MaxDamage;
+            this.slotBaseX = slotBaseX;
+            this.slotBaseZ = slotBaseZ;
+            this.slotSpacingBlocks = slotSpacingBlocks;
+            this.maxSlots = maxSlots;
+            this.restoreBudgetMillis = restoreBudgetMillis;
+            this.restoreChunkWindow = restoreChunkWindow;
         }
 
         private static Settings defaults() {
@@ -153,7 +168,9 @@ public final class BattlefieldServerConfig {
                     6, 12,
                     60.0, 120.0, 81, 70.0,
                     45.0, 0.18, 30 * 20,
-                    20.0, 30.0, 40.0f
+                    20.0, 30.0, 40.0f,
+                    16384, 0, 2048, 8,
+                    4, 48
             );
         }
 
@@ -196,7 +213,13 @@ public final class BattlefieldServerConfig {
                     positive(root.v1FlightTicks, def.v1FlightTicks),
                     positiveDouble(root.v1KillRadius, def.v1KillRadius),
                     positiveDouble(root.v1MaxDamageRadius, def.v1MaxDamageRadius),
-                    positiveFloat(root.v1MaxDamage, def.v1MaxDamage)
+                    positiveFloat(root.v1MaxDamage, def.v1MaxDamage),
+                    root.slotBaseX == null ? def.slotBaseX : root.slotBaseX & ~511,
+                    root.slotBaseZ == null ? def.slotBaseZ : root.slotBaseZ & ~511,
+                    Math.max(512, positive(root.slotSpacingBlocks, def.slotSpacingBlocks) & ~511),
+                    positive(root.maxSlots, def.maxSlots),
+                    positive(root.restoreBudgetMillis, def.restoreBudgetMillis),
+                    positive(root.restoreChunkWindow, def.restoreChunkWindow)
             );
         }
     }
@@ -292,6 +315,19 @@ public final class BattlefieldServerConfig {
         String v1MaxDamageRadius_comment = "V1 最大伤害半径。";
         Float v1MaxDamage = 40.0f;
         String v1MaxDamage_comment = "V1 外圈伤害衰减起点的最大伤害。";
+
+        Integer slotBaseX = 16384;
+        String slotBaseX_comment = "战场维度中第 0 号槽位的起点 X（方块，自动对齐到 512）。远离 0,0 以避开常驻出生区块。";
+        Integer slotBaseZ = 0;
+        String slotBaseZ_comment = "战场维度中槽位所在行的起点 Z（方块，自动对齐到 512）。";
+        Integer slotSpacingBlocks = 2048;
+        String slotSpacingBlocks_comment = "相邻槽位的间距（方块，至少 512）。应大于「地图宽度 + 512」，保证两局之间看不到、粒子与声音也传不过去。";
+        Integer maxSlots = 8;
+        String maxSlots_comment = "战场维度最多划分多少个槽位，即全服实例化对局并发上限。";
+        Integer restoreBudgetMillis = 4;
+        String restoreBudgetMillis_comment = "地图还原每 tick 最多占用的主线程时间（毫秒），所有还原任务共用。";
+        Integer restoreChunkWindow = 48;
+        String restoreChunkWindow_comment = "地图还原时预先异步加载的区块数。";
 
         static Root defaults() {
             return new Root();

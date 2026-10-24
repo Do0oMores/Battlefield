@@ -15,7 +15,11 @@ import java.util.List;
 import top.mores.battlefield.config.BattlefieldServerConfig;
 
 public class SectorManager {
-    public void tick(GameSession session) {
+    /**
+     * @param players 本局在线参与者。只统计他们：原实现取的是全服在线玩家，
+     *                同维度的其他对局、带着残留阵营的非参与者都会被算进据点人数。
+     */
+    public void tick(GameSession session, List<ServerPlayer> players) {
         if (!session.running) return;
 
         Sector sector = session.currentSector();
@@ -23,8 +27,6 @@ public class SectorManager {
             return;
         }
 
-        // 在线玩家列表只在本次 tick 取一次；原实现每个据点都重新取一遍
-        List<ServerPlayer> players = session.level.getServer().getPlayerList().getPlayers();
         // 得分发放是否到期，只判断一次：同一 tick 内所有据点共用同一结果
         boolean scoreAwardDue = session.isScoreAwardDue();
 
@@ -32,18 +34,19 @@ public class SectorManager {
             updatePoint(session, p, players, scoreAwardDue);
         }
 
+
         if (sector.isClearedByAttackers()) {
             boolean hasNextSector = session.currentSectorIndex + 1 < session.sectors.size();
             if (hasNextSector && session.addMilitary > 0) {
                 session.attackerTickets += session.addMilitary;
-                broadcast(session.level, "攻方占领防区，兵力补充 +" + session.addMilitary + "！");
+                broadcast(players, "攻方占领防区，兵力补充 +" + session.addMilitary + "！");
             }
 
             session.currentSectorIndex++;
-            broadcast(session.level, "攻方推进至下一战线！当前进度=" + session.currentSectorIndex);
+            broadcast(players, "攻方推进至下一战线！当前进度=" + session.currentSectorIndex);
             Sector next = session.currentSector();
             if (next != null) {
-                BattlefieldNet.sendSectorAreas(session.level, session.currentSectorIndex, next.attackerAreas, next.defenderAreas);
+                BattlefieldNet.sendSectorAreas(players, session.currentSectorIndex, next.attackerAreas, next.defenderAreas);
             }
         }
     }
@@ -128,7 +131,7 @@ public class SectorManager {
             point.owner = TeamId.ATTACKERS;
             if (!point.awardedCaptureScore) {
                 point.awardedCaptureScore = true;
-                broadcast(level, "攻方占领据点 " + point.id + "！");
+                broadcast(players, "攻方占领据点 " + point.id + "！");
             }
         } else if (now <= -100) {
             point.owner = TeamId.DEFENDERS;
@@ -136,8 +139,12 @@ public class SectorManager {
         }
     }
 
-    private static void broadcast(ServerLevel level, String msg) {
-        level.getServer().getPlayerList().broadcastSystemMessage(Component.literal("[Battlefield] " + msg), false);
+    /** 只发本局参与者。原实现是全服聊天广播。 */
+    private static void broadcast(List<ServerPlayer> players, String msg) {
+        Component text = Component.literal("[Battlefield] " + msg);
+        for (ServerPlayer sp : players) {
+            sp.sendSystemMessage(text);
+        }
     }
 
     private static int clamp(int v, int min, int max) {
