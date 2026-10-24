@@ -1,17 +1,24 @@
 package top.mores.battlefield.net;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
 import top.mores.battlefield.game.BattlefieldGameManager;
-import top.mores.battlefield.server.BackpackBridge;
 
 import java.util.function.Supplier;
 
+/**
+ * 客户端请求重新部署。
+ * <p>
+ * 包里只带「部署点索引 + 配装槽位」，坐标完全由服务端按 arena 配置解析，
+ * 客户端无法指定落点，因此不存在"发个包就能传送到任意位置"的漏洞。
+ */
 public final class C2SDeployRequest {
 
-    private final int spawnIndex; // 测试用：0=基地
-    private final int bpSlot;     // 1..N
+    private final int spawnIndex; // 0=队伍主出生点；1..N=第 N 个可用小队信标
+    private final int bpSlot;     // 1..9
 
     public C2SDeployRequest(int spawnIndex, int bpSlot) {
         this.spawnIndex = spawnIndex;
@@ -35,11 +42,13 @@ public final class C2SDeployRequest {
             ServerPlayer sp = ctx.getSender();
             if (sp == null) return;
 
-            if (msg.bpSlot < 1 || msg.bpSlot > 9) return;
+            BattlefieldGameManager.DeployResult result =
+                    BattlefieldGameManager.deploy(sp, msg.spawnIndex, msg.bpSlot);
 
-            BattlefieldGameManager.handleDeployRequest(sp, msg.spawnIndex);
-
-            BackpackBridge.applyBackpackPreset(sp, msg.bpSlot);
+            if (!result.ok()) {
+                sp.displayClientMessage(
+                        Component.literal(result.message()).withStyle(ChatFormatting.RED), true);
+            }
         });
         ctx.setPacketHandled(true);
     }

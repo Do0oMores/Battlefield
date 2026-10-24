@@ -8,8 +8,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.phys.Vec3;
+import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
+import top.mores.battlefield.net.S2CGameStatePacket;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -332,6 +334,15 @@ public final class SectorConfigLoader {
             List<CapturePoint> points = new ArrayList<>();
             for (PointJson p : s.points) {
                 if (p == null || p.id == null || p.id.isBlank() || p.radius <= 0) continue;
+
+                // 网络包只给据点 id 8 个字符（见 S2CGameStatePacket.MAX_POINT_ID_LENGTH），
+                // 超长会让客户端 readUtf 抛异常直接掉线，这里在加载期就拦下。
+                if (p.id.length() > S2CGameStatePacket.MAX_POINT_ID_LENGTH) {
+                    Battlefield.LOGGER.error("[Battlefield] 据点 id '{}' 超过 {} 字符，已忽略（sector={}）",
+                            p.id, S2CGameStatePacket.MAX_POINT_ID_LENGTH, s.id);
+                    continue;
+                }
+
                 CapturePoint cp = new CapturePoint(
                         p.id,
                         p.x,
@@ -385,10 +396,7 @@ public final class SectorConfigLoader {
         root.arenas = new ArrayList<>();
         ArenaJson arena = new ArenaJson();
         arena.areaName = "area_alpha";
-        arena.templateWorld = "minecraft:world";
-        arena.useTemporaryWorld = true;
-        arena.preloadRadiusChunks = 6;
-        arena.instanceWorldPrefix = "bf_inst";
+        arena.world = "minecraft:overworld";
         arena.time = 20;
         arena.military = 300;
         arena.addMilitary = 100;
@@ -398,25 +406,25 @@ public final class SectorConfigLoader {
         arena.minPlayerNumber = 2;
 
         arena.wait = new PositionJson();
-        arena.wait.world = "minecraft:world";
+        arena.wait.world = "minecraft:overworld";
         arena.wait.x = 0.5;
         arena.wait.y = 64.0;
         arena.wait.z = 0.5;
 
         arena.lobby = new PositionJson();
-        arena.lobby.world = "minecraft:world";
+        arena.lobby.world = "minecraft:overworld";
         arena.lobby.x = 0.5;
         arena.lobby.y = 64.0;
         arena.lobby.z = 0.5;
 
         arena.firstAttackSpawnPoint = new PositionJson();
-        arena.firstAttackSpawnPoint.world = "minecraft:world";
+        arena.firstAttackSpawnPoint.world = "minecraft:overworld";
         arena.firstAttackSpawnPoint.x = 16.5;
         arena.firstAttackSpawnPoint.y = 64.0;
         arena.firstAttackSpawnPoint.z = 0.5;
 
         arena.firstDefendSpawnPoint = new PositionJson();
-        arena.firstDefendSpawnPoint.world = "minecraft:world";
+        arena.firstDefendSpawnPoint.world = "minecraft:overworld";
         arena.firstDefendSpawnPoint.x = -16.5;
         arena.firstDefendSpawnPoint.y = 64.0;
         arena.firstDefendSpawnPoint.z = 0.5;

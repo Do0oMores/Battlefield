@@ -47,6 +47,8 @@ public final class ClientGameState {
     // 2D 可活动区域（矩形）
     public static List<S2CSectorAreaPacket.AreaRect> attackerAreas = Collections.emptyList();
     public static List<S2CSectorAreaPacket.AreaRect> defenderAreas = Collections.emptyList();
+    /** 本次对局是否已经收到过区域包。中途加入的第一份包只是同步现状，不该播"推进至下一战线"。 */
+    private static boolean areasInitialized = false;
     public static final java.util.ArrayDeque<ScoreToast> SCORE_TOASTS = new java.util.ArrayDeque<>();
 
     public static final class ScoreToast {
@@ -127,12 +129,14 @@ public final class ClientGameState {
                                    List<S2CSectorAreaPacket.AreaRect> def) {
 
         boolean changed = (newSectorIndex != sectorIndex);
+        boolean firstSync = !areasInitialized;
         sectorIndex = newSectorIndex;
 
         attackerAreas = (atk == null) ? java.util.Collections.emptyList() : new java.util.ArrayList<>(atk);
         defenderAreas = (def == null) ? java.util.Collections.emptyList() : new java.util.ArrayList<>(def);
+        areasInitialized = true;
 
-        if (changed && Minecraft.getInstance().player != null) {
+        if (changed && !firstSync && Minecraft.getInstance().player != null) {
             VoiceManager.play(ModSounds.VOICE_ATTACK_NEXT_SECTOR.get());
         }
     }
@@ -157,6 +161,7 @@ public final class ClientGameState {
         overlayTicks = 0;
         attackerAreas = Collections.emptyList();
         defenderAreas = Collections.emptyList();
+        areasInitialized = false;
         sectorIndex = 0;
         lastProgressById.clear();
         lastOwnerTeamById.clear();
@@ -208,9 +213,6 @@ public final class ClientGameState {
             if (nowTick - t.startTick >= HUD_TOAST_HIDE_TICKS) {
                 SCORE_TOASTS.pollFirst();
             } else break;
-        }
-        if (SCORE_TOASTS.isEmpty()) {
-            // 没有toast了，是否隐藏中心HUD由你的原逻辑决定
         }
     }
 }

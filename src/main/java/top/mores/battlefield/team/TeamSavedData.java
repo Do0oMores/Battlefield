@@ -33,8 +33,22 @@ public class TeamSavedData extends SavedData {
         setDirty();
     }
 
+    /**
+     * 固定存放在主世界的 DataStorage 中。
+     * <p>
+     * SavedData 是「每个维度一份」的，如果按 player.serverLevel() 取，
+     * 玩家一旦跨维度（大厅 / 战场 / 末地），队伍数据就会读到另一份空表而瞬间归零。
+     * 这里统一锚定到 overworld，调用方不需要关心自己传进来的是哪个维度。
+     */
     public static TeamSavedData get(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(TeamSavedData::load, TeamSavedData::new, DATA_NAME);
+        ServerLevel anchor = resolveAnchor(level);
+        return anchor.getDataStorage().computeIfAbsent(TeamSavedData::load, TeamSavedData::new, DATA_NAME);
+    }
+
+    static ServerLevel resolveAnchor(ServerLevel level) {
+        if (level == null) return null;
+        net.minecraft.server.MinecraftServer server = level.getServer();
+        return server != null ? server.overworld() : level;
     }
 
     public static TeamSavedData load(CompoundTag tag) {

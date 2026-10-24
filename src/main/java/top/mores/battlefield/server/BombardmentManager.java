@@ -87,7 +87,7 @@ public final class BombardmentManager {
 
             // ✅ 区域烟：低频刷（按视角变色）
             if ((now & 7) == 0) { // 每 8 tick 一次
-                spawnAreaSmoke(level, inst.owner(), inst.ownerTeam(), inst.center(), level.getRandom());
+                spawnAreaSmoke(level, inst.ownerTeam(), inst.center(), level.getRandom());
             }
 
             if ((now - inst.startTick()) % bombardIntervalTicks() == 0) {
@@ -117,8 +117,8 @@ public final class BombardmentManager {
         );
         double ty = surface.getY() + 0.2;
 
-        // ✅ 落点预警烟：按视角变色
-        sendSmokePerViewer(level, owner, ownerTeam, tx, ty + 0.2, tz,
+        // ✅ 落点预警烟
+        sendSmokePerViewer(level, ownerTeam, tx, ty + 0.2, tz,
                 6, 0.8f, 0.2f, 0.8f, 0.01f);
 
         // 炸弹出生点：目标上空
@@ -144,7 +144,7 @@ public final class BombardmentManager {
         level.addFreshEntity(bomb);
     }
 
-    private static void spawnAreaSmoke(ServerLevel level, UUID owner, TeamId ownerTeam, Vec3 center, RandomSource rand) {
+    private static void spawnAreaSmoke(ServerLevel level, TeamId ownerTeam, Vec3 center, RandomSource rand) {
         // 每次刷 6 团：按视角变色
         for (int i = 0; i < 6; i++) {
             double ang = rand.nextDouble() * Math.PI * 2.0;
@@ -160,33 +160,33 @@ public final class BombardmentManager {
             );
             double y = surface.getY() + 0.2;
 
-            sendSmokePerViewer(level, owner, ownerTeam, x, y, z,
+            sendSmokePerViewer(level, ownerTeam, x, y, z,
                     4, 0.6f, 0.15f, 0.6f, 0.008f);
         }
     }
 
-    /** ✅ 逐玩家发烟：呼叫者/队友看到蓝；敌方看到红 */
-    private static void sendSmokePerViewer(ServerLevel level, UUID owner, TeamId ownerTeam,
+    /** 烟幕可见半径（格）。原实现不判距离，会把包发给整个维度的玩家。 */
+    private static final double SMOKE_VIEW_RADIUS = 96.0;
+
+    /** ✅ 一次广播：烟幕颜色交给客户端按自身阵营决定，不再逐玩家发包 */
+    private static void sendSmokePerViewer(ServerLevel level, TeamId ownerTeam,
                                            double x, double y, double z,
                                            int count, float dx, float dy, float dz, float speed) {
 
-        for (ServerPlayer sp : level.getServer().getPlayerList().getPlayers()) {
-            if (sp.serverLevel() != level) continue;
+        // 坐标异常（NaN/Inf）时既不广播也不让客户端碰粒子系统
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) return;
+        if (level.getServer() == null) return;
+        // 维度内没有任何玩家时直接跳过，连包对象都不构造
+        if (level.players().isEmpty()) return;
 
-            TeamId t = TeamManager.getTeam(sp);
+        byte teamCode = (byte) (ownerTeam == TeamId.ATTACKERS ? S2CBombardSmokePacket.TEAM_ATTACKERS
+                : ownerTeam == TeamId.DEFENDERS ? S2CBombardSmokePacket.TEAM_DEFENDERS
+                : S2CBombardSmokePacket.TEAM_SPECTATOR);
 
-            boolean isOwner = sp.getUUID().equals(owner);
-            boolean friendly = isOwner || (t == ownerTeam);
-
-            // 蓝/红（你可再微调）
-            float r = friendly ? 0.18f : 1.0f;
-            float g = friendly ? 0.45f : 0.10f;
-            float b = friendly ? 1.00f : 0.10f;
-
-            BattlefieldNet.CH.send(
-                    PacketDistributor.PLAYER.with(() -> sp),
-                    new S2CBombardSmokePacket(x, y, z, r, g, b, count, dx, dy, dz, speed)
-            );
-        }
+        BattlefieldNet.CH.send(
+                PacketDistributor.NEAR.with(() ->
+                        new PacketDistributor.TargetPoint(x, y, z, SMOKE_VIEW_RADIUS, level.dimension())),
+                new S2CBombardSmokePacket(x, y, z, teamCode, count, dx, dy, dz, speed)
+        );
     }
 }

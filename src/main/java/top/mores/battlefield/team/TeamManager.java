@@ -67,10 +67,10 @@ public final class TeamManager {
     public static int countTeam(ServerLevel level, TeamId team) {
         TeamSavedData data = TeamSavedData.get(level);
         int count = 0;
+        // 不再按 sp.serverLevel() == level 过滤：队伍数据已经锚定到主世界，
+        // 玩家可能正在其他维度（大厅 / 战场），按维度过滤会把这些人漏掉。
         for (ServerPlayer sp : level.getServer().getPlayerList().getPlayers()) {
-            if (sp.serverLevel() != level) continue;
-            UUID id = sp.getUUID();
-            if (data.getTeam(id) == team) count++;
+            if (data.getTeam(sp.getUUID()) == team) count++;
         }
         return count;
     }

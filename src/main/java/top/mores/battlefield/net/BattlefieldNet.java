@@ -20,7 +20,8 @@ public final class BattlefieldNet {
     private BattlefieldNet() {
     }
 
-    private static final String PROTOCOL = "1";
+    // 2：S2CBombardSmokePacket 由「逐玩家下发 r/g/b」改为「广播 ownerTeam」，字节布局已变
+    private static final String PROTOCOL = "2";
     public static final SimpleChannel CH = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Battlefield.MODID, "main"),
             () -> PROTOCOL, PROTOCOL::equals, PROTOCOL::equals
@@ -151,8 +152,22 @@ public final class BattlefieldNet {
 
     public static void sendSectorAreas(ServerLevel level, int sectorIndex,
                                        List<Sector.AreaRect> atk, List<Sector.AreaRect> def) {
+        sendToAllInLevel(level, buildSectorAreaPacket(sectorIndex, atk, def));
+    }
+
+    /**
+     * 只发给单个玩家。用于对局中途加入：区域包原本只在开局与战线推进时整维度广播，
+     * 中途加入者永远收不到，客户端会既没有区域框也没有出界警告，但服务端照样计时击杀。
+     */
+    public static void sendSectorAreasTo(ServerPlayer sp, int sectorIndex,
+                                         List<Sector.AreaRect> atk, List<Sector.AreaRect> def) {
+        sendToPlayer(sp, buildSectorAreaPacket(sectorIndex, atk, def));
+    }
+
+    private static S2CSectorAreaPacket buildSectorAreaPacket(int sectorIndex,
+                                                             List<Sector.AreaRect> atk, List<Sector.AreaRect> def) {
         var atk2 = atk.stream().map(c -> new S2CSectorAreaPacket.AreaRect(c.x1(), c.z1(), c.x2(), c.z2())).toList();
         var def2 = def.stream().map(c -> new S2CSectorAreaPacket.AreaRect(c.x1(), c.z1(), c.x2(), c.z2())).toList();
-        sendToAllInLevel(level, new S2CSectorAreaPacket(sectorIndex, atk2, def2));
+        return new S2CSectorAreaPacket(sectorIndex, atk2, def2);
     }
 }

@@ -23,6 +23,8 @@ import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
 
+import java.util.List;
+
 public class V1MissileEntity extends Entity {
     private Vec3 start = Vec3.ZERO;
     private Vec3 control = Vec3.ZERO;
@@ -174,19 +176,39 @@ public class V1MissileEntity extends Entity {
         return false;
     }
 
+    /** 尾迹发射间隔（tick）。原实现每 tick 发 3 个采样点 × 2 种粒子 = 6 次广播。 */
+    private static final int TRAIL_INTERVAL_TICKS = 2;
+    /** 尾迹可见半径（格）。先筛出观察者再逐人下发，避免每次调用都全量遍历在线玩家。 */
+    private static final double TRAIL_VIEW_RADIUS = 64.0;
+    private static final double TRAIL_VIEW_RADIUS_SQR = TRAIL_VIEW_RADIUS * TRAIL_VIEW_RADIUS;
+
     private void spawnTrail(ServerLevel level, Vec3 oldPos, Vec3 newPos) {
-        for (int i = 0; i < 3; i++) {
-            double a = i / 2.0;
-            Vec3 p = oldPos.lerp(newPos, a);
+        // 降频：2 tick 采样一次，位置取本段中点即可覆盖两 tick 的位移，视觉上没有断点
+        if (elapsedTicks % TRAIL_INTERVAL_TICKS != 0) return;
 
-            level.sendParticles(ParticleTypes.SMOKE,
-                    p.x, p.y, p.z,
-                    2, 0.03, 0.03, 0.03, 0.0);
+        // 原地未动（起飞首 tick / 卡住）或坐标异常时不发
+        if (oldPos.distanceToSqr(newPos) < 1.0e-6) return;
+        if (!isFinite(oldPos) || !isFinite(newPos)) return;
 
-            level.sendParticles(ParticleTypes.CAMPFIRE_COSY_SMOKE,
-                    p.x, p.y, p.z,
-                    1, 0.01, 0.01, 0.01, 0.002);
+        Vec3 p = oldPos.lerp(newPos, 0.5);
+        if (!isFinite(p)) return;
+
+        // 自己筛一次观察者，替代 sendParticles 内部对全维度的重复遍历
+        List<ServerPlayer> viewers = level.getPlayers(
+                sp -> sp.distanceToSqr(p.x, p.y, p.z) <= TRAIL_VIEW_RADIUS_SQR);
+        if (viewers.isEmpty()) return; // 无人可见：不做任何下发
+
+        for (ServerPlayer viewer : viewers) {
+            // force=true：半径已自行判定，避免方法内部再按 32 格二次过滤
+            level.sendParticles(viewer, ParticleTypes.CAMPFIRE_COSY_SMOKE, true,
+                    p.x, p.y, p.z, 6, 0.12, 0.12, 0.12, 0.002);
+            level.sendParticles(viewer, ParticleTypes.SMOKE, true,
+                    p.x, p.y, p.z, 10, 0.15, 0.15, 0.15, 0.0);
         }
+    }
+
+    private static boolean isFinite(Vec3 v) {
+        return Double.isFinite(v.x) && Double.isFinite(v.y) && Double.isFinite(v.z);
     }
 
     private void playFlightSound() {

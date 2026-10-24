@@ -17,8 +17,15 @@ public class SquadSavedData extends SavedData {
     private final Map<UUID, Integer> attackersSquadByPlayer = new HashMap<>();
     private final Map<UUID, Integer> defendersSquadByPlayer = new HashMap<>();
 
+    /**
+     * 与 {@link TeamSavedData#get(ServerLevel)} 一致，固定存放在主世界，
+     * 避免玩家跨维度后读到另一份空表导致小队归属丢失。
+     */
     public static SquadSavedData get(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(SquadSavedData::load, SquadSavedData::new, DATA_NAME);
+        if (level == null) throw new IllegalArgumentException("level == null");
+        net.minecraft.server.MinecraftServer server = level.getServer();
+        ServerLevel anchor = server != null ? server.overworld() : level;
+        return anchor.getDataStorage().computeIfAbsent(SquadSavedData::load, SquadSavedData::new, DATA_NAME);
     }
 
     public static SquadSavedData load(CompoundTag tag) {

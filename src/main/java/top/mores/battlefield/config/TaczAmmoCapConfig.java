@@ -31,6 +31,8 @@ public final class TaczAmmoCapConfig {
 
     private static final Map<String, Integer> CAPS = new LinkedHashMap<>();
     private static boolean loaded = false;
+    /** 有未落盘的变更。见 {@link #flushIfDirty()}。 */
+    private static boolean dirty = false;
 
     private TaczAmmoCapConfig() {
     }
@@ -47,6 +49,7 @@ public final class TaczAmmoCapConfig {
 
     public static synchronized void reload() {
         loaded = false;
+        dirty = false;
         CAPS.clear();
         loadInternal();
     }
@@ -71,7 +74,9 @@ public final class TaczAmmoCapConfig {
 
         int sanitized = sanitize(defaultValue);
         CAPS.put(key, sanitized);
-        saveInternal();
+        // 这里原来是 saveInternal()：主线程同步重写整个 JSON。
+        // 玩家每拿到一把尚未记录过的枪就会触发一次全量磁盘 IO，改为标记脏数据、定期合并落盘。
+        dirty = true;
         return sanitized;
     }
 
@@ -80,7 +85,7 @@ public final class TaczAmmoCapConfig {
         if (gunId == null) return;
 
         CAPS.put(gunId.toString(), sanitize(value));
-        saveInternal();
+        dirty = true;
     }
 
     public static synchronized boolean remove(ResourceLocation gunId) {
@@ -89,7 +94,7 @@ public final class TaczAmmoCapConfig {
 
         boolean removed = CAPS.remove(gunId.toString()) != null;
         if (removed) {
-            saveInternal();
+            dirty = true;
         }
         return removed;
     }
@@ -107,6 +112,17 @@ public final class TaczAmmoCapConfig {
 
     public static synchronized void save() {
         loadIfNeeded();
+        dirty = false;
+        saveInternal();
+    }
+
+    /**
+     * 把累积的变更合并成一次落盘，由服务端定时任务调用（见 AmmoStationCooldownCleaner）。
+     * 用于替代原先在 getOrCreate()/set()/remove() 里直接同步写盘的写法。
+     */
+    public static synchronized void flushIfDirty() {
+        if (!dirty) return;
+        dirty = false;
         saveInternal();
     }
 

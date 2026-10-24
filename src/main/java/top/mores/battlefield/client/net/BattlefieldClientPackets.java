@@ -63,7 +63,14 @@ public final class BattlefieldClientPackets {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
 
-        var dust = new DustParticleOptions(new Vector3f(msg.r, msg.g, msg.b), 1.5f);
+        // 坐标异常时直接丢弃，避免把 NaN 递给粒子系统
+        if (!Double.isFinite(msg.x) || !Double.isFinite(msg.y) || !Double.isFinite(msg.z)) return;
+
+        // 发射方阵营 == 本地玩家阵营 视为友方；观战者（myTeam=2）只有发射方也是观战时才算友方
+        float[] color = (ClientGameState.myTeam == msg.ownerTeam)
+                ? S2CBombardSmokePacket.FRIENDLY_COLOR
+                : S2CBombardSmokePacket.ENEMY_COLOR;
+        var dust = new DustParticleOptions(new Vector3f(color[0], color[1], color[2]), 1.5f);
 
         for (int i = 0; i < msg.count; i++) {
             double px = msg.x + (mc.level.random.nextDouble() * 2 - 1) * msg.dx;

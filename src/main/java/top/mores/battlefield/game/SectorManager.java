@@ -23,8 +23,13 @@ public class SectorManager {
             return;
         }
 
+        // 在线玩家列表只在本次 tick 取一次；原实现每个据点都重新取一遍
+        List<ServerPlayer> players = session.level.getServer().getPlayerList().getPlayers();
+        // 得分发放是否到期，只判断一次：同一 tick 内所有据点共用同一结果
+        boolean scoreAwardDue = session.isScoreAwardDue();
+
         for (CapturePoint p : sector.points) {
-            updatePoint(session, p);
+            updatePoint(session, p, players, scoreAwardDue);
         }
 
         if (sector.isClearedByAttackers()) {
@@ -43,9 +48,8 @@ public class SectorManager {
         }
     }
 
-    private void updatePoint(GameSession session, CapturePoint point) {
+    private void updatePoint(GameSession session, CapturePoint point, List<ServerPlayer> players, boolean awardScoreNow) {
         ServerLevel level = session.level;
-        boolean shouldAwardScore = level.getGameTime() % BattlefieldServerConfig.get().scoreAwardIntervalTicks == 0;
 
         int attackers = 0;
         int defenders = 0;
@@ -53,7 +57,6 @@ public class SectorManager {
         final double r2 = point.radius * point.radius;
         final double cx = point.x, cy = point.y, cz = point.z;
 
-        List<ServerPlayer> players = level.getServer().getPlayerList().getPlayers();
         for (ServerPlayer sp : players) {
             if (sp.serverLevel() != level) continue;
 
@@ -67,7 +70,7 @@ public class SectorManager {
             double dx = pos.x - cx, dz = pos.z - cz;
             if (dx * dx + dz * dz > r2) continue;
 
-            if (shouldAwardScore) {
+            if (awardScoreNow) {
                 if (team == point.owner) {
                     ScoreManager.addDefendScore(sp, 5);
                 } else {

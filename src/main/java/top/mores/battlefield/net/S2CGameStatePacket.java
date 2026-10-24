@@ -12,6 +12,24 @@ import java.util.function.Supplier;
 
 public class S2CGameStatePacket {
 
+    /**
+     * 据点 id 的线上长度上限。
+     * <p>
+     * 编码端原来用 {@code writeUtf(id)}（上限 32767），解码端却用 {@code readUtf(8)}，
+     * 一旦配置里写了超过 8 个字符的 id，客户端解码会直接抛异常导致掉线。
+     * 现在两端统一使用本常量，配置加载阶段也会按它校验。
+     */
+    public static final int MAX_POINT_ID_LENGTH = 8;
+
+    /** 阶段遮罩文案的长度上限，同样保证两端一致。 */
+    public static final int MAX_OVERLAY_TITLE_LENGTH = 128;
+    public static final int MAX_OVERLAY_SUB_LENGTH = 512;
+
+    private static String clamp(String s, int max) {
+        if (s == null) return "";
+        return s.length() <= max ? s : s.substring(0, max);
+    }
+
     public static class PointInfo {
         public String id;
         public double x, y, z;
@@ -83,14 +101,14 @@ public class S2CGameStatePacket {
 
         buf.writeVarInt(msg.squadPlayerIds.size());
         for (int i = 0; i < msg.squadPlayerIds.size(); i++) {
-            buf.writeUtf(msg.squadPlayerIds.get(i));
+            buf.writeUtf(msg.squadPlayerIds.get(i), 32);
             buf.writeInt(msg.squadPlayerScores.get(i));
         }
         buf.writeInt(msg.squadTotalScore);
 
         buf.writeVarInt(msg.points.size());
         for (PointInfo p : msg.points) {
-            buf.writeUtf(p.id);
+            buf.writeUtf(clamp(p.id, MAX_POINT_ID_LENGTH), MAX_POINT_ID_LENGTH);
             buf.writeDouble(p.x);
             buf.writeDouble(p.y);
             buf.writeDouble(p.z);
@@ -102,8 +120,8 @@ public class S2CGameStatePacket {
         }
 
         buf.writeVarInt(msg.phase);
-        buf.writeUtf(msg.overlayTitle == null ? "" : msg.overlayTitle);
-        buf.writeUtf(msg.overlaySub == null ? "" : msg.overlaySub, 512);
+        buf.writeUtf(clamp(msg.overlayTitle, MAX_OVERLAY_TITLE_LENGTH), MAX_OVERLAY_TITLE_LENGTH);
+        buf.writeUtf(clamp(msg.overlaySub, MAX_OVERLAY_SUB_LENGTH), MAX_OVERLAY_SUB_LENGTH);
         buf.writeVarInt(msg.overlayTicks);
     }
 
@@ -128,7 +146,7 @@ public class S2CGameStatePacket {
         int n = buf.readVarInt();
         List<PointInfo> pts = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
-            String id = buf.readUtf(8);
+            String id = buf.readUtf(MAX_POINT_ID_LENGTH);
             double x = buf.readDouble(), y = buf.readDouble(), z = buf.readDouble();
             float r = buf.readFloat();
             int prog = buf.readInt();
@@ -138,8 +156,8 @@ public class S2CGameStatePacket {
             pts.add(new PointInfo(id, x, y, z, r, prog, ownerTeam, aIn, dIn));
         }
         int phase = buf.readVarInt();
-        String overlayTitle = buf.readUtf();
-        String overlaySub = buf.readUtf(512);
+        String overlayTitle = buf.readUtf(MAX_OVERLAY_TITLE_LENGTH);
+        String overlaySub = buf.readUtf(MAX_OVERLAY_SUB_LENGTH);
         int overlayTicks = buf.readVarInt();
 
         return new S2CGameStatePacket(inBattle, myTeam, atk, def,

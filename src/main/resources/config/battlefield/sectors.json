@@ -2,10 +2,7 @@
   "arenas": [
     {
       "areaName": "area_alpha",
-      "templateWorld": "minecraft:world",
-      "useTemporaryWorld": true,
-      "preloadRadiusChunks": 6,
-      "instanceWorldPrefix": "bf_inst",
+      "world": "minecraft:overworld",
       "time": 20,
       "military": 300,
       "addMilitary": 100,
@@ -14,25 +11,25 @@
       "defendNumber": 16,
       "minPlayerNumber": 2,
       "wait": {
-        "world": "minecraft:world",
+        "world": "minecraft:overworld",
         "x": 0.5,
         "y": 64.0,
         "z": 0.5
       },
       "lobby": {
-        "world": "minecraft:world",
+        "world": "minecraft:overworld",
         "x": 0.5,
         "y": 64.0,
         "z": 0.5
       },
       "firstAttackSpawnPoint": {
-        "world": "minecraft:world",
+        "world": "minecraft:overworld",
         "x": 20.5,
         "y": 64.0,
         "z": 0.5
       },
       "firstDefendSpawnPoint": {
-        "world": "minecraft:world",
+        "world": "minecraft:overworld",
         "x": -20.5,
         "y": 64.0,
         "z": 0.5
@@ -83,10 +80,7 @@
     },
     {
       "areaName": "area_bravo",
-      "templateWorld": "minecraft:world",
-      "useTemporaryWorld": true,
-      "preloadRadiusChunks": 6,
-      "instanceWorldPrefix": "bf_inst",
+      "world": "minecraft:overworld",
       "time": 20,
       "military": 300,
       "addMilitary": 100,
@@ -95,25 +89,25 @@
       "defendNumber": 16,
       "minPlayerNumber": 2,
       "wait": {
-        "world": "minecraft:world",
+        "world": "minecraft:overworld",
         "x": 200.5,
         "y": 64.0,
         "z": 0.5
       },
       "lobby": {
-        "world": "minecraft:world",
+        "world": "minecraft:overworld",
         "x": 200.5,
         "y": 64.0,
         "z": 0.5
       },
       "firstAttackSpawnPoint": {
-        "world": "minecraft:world",
+        "world": "minecraft:overworld",
         "x": 220.5,
         "y": 64.0,
         "z": 0.5
       },
       "firstDefendSpawnPoint": {
-        "world": "minecraft:world",
+        "world": "minecraft:overworld",
         "x": 180.5,
         "y": 64.0,
         "z": 0.5
