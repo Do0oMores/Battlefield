@@ -69,6 +69,8 @@ public final class BattlefieldServerConfig {
 
         public final int gameCountdownSeconds;
         public final int gameEndingSeconds;
+        /** 阵亡后到允许部署之间的等待（tick）。界面在这个等待期间打开并显示倒计时。 */
+        public final int deployOpenDelayTicks;
 
         public final int bombardDurationTicks;
         public final int bombardTotalBombs;
@@ -102,10 +104,17 @@ public final class BattlefieldServerConfig {
         public final int restoreBudgetMillis;
         public final int restoreChunkWindow;
 
+        /** 是否用地图模板烘焙部署界面的底图。关掉后界面退回坐标示意图。 */
+        public final boolean deployMapBakeEnabled;
+        /** 底图精度：每像素代表多少格。越小越清晰，烘焙越慢、包越大。 */
+        public final int deployMapBlocksPerPixel;
+        /** 底图最长边像素上限，超过则自动降低精度。 */
+        public final int deployMapMaxPixels;
+
         private Settings(int teamCap, int squadCap, int teamSquadCap,
                          int captureIntervalTicks, int scoreAwardIntervalTicks, int captureBaseStep, int captureBonusStep, int captureEmptyDecayStep, boolean captureDecayOnTie,
                          double areaRadiusScale, int outsideAreaKillTicks,
-                         int gameCountdownSeconds, int gameEndingSeconds,
+                         int gameCountdownSeconds, int gameEndingSeconds, int deployOpenDelayTicks,
                          int bombardDurationTicks, int bombardTotalBombs, float bombardRadius, float bombardDamageRadius, float bombardMaxDamage,
                          int scoreStreakWindowTicks, int scoreStreakKillBonus, int scoreSquadWipeBonus, int scoreHeadshotKillBonus, int scoreKillBase,
                          int scoreToastMergeWindowTicks, int scoreToastFlushAfterTicks,
@@ -113,7 +122,8 @@ public final class BattlefieldServerConfig {
                          double v1ArcHeightMin, double v1ArcHeightScale, int v1FlightTicks,
                          double v1KillRadius, double v1MaxDamageRadius, float v1MaxDamage,
                          int slotBaseX, int slotBaseZ, int slotSpacingBlocks, int maxSlots,
-                         int restoreBudgetMillis, int restoreChunkWindow) {
+                         int restoreBudgetMillis, int restoreChunkWindow,
+                         boolean deployMapBakeEnabled, int deployMapBlocksPerPixel, int deployMapMaxPixels) {
             this.teamCap = teamCap;
             this.squadCap = squadCap;
             this.teamSquadCap = teamSquadCap;
@@ -127,6 +137,7 @@ public final class BattlefieldServerConfig {
             this.outsideAreaKillTicks = outsideAreaKillTicks;
             this.gameCountdownSeconds = gameCountdownSeconds;
             this.gameEndingSeconds = gameEndingSeconds;
+            this.deployOpenDelayTicks = deployOpenDelayTicks;
             this.bombardDurationTicks = bombardDurationTicks;
             this.bombardTotalBombs = bombardTotalBombs;
             this.bombardRadius = bombardRadius;
@@ -155,6 +166,9 @@ public final class BattlefieldServerConfig {
             this.maxSlots = maxSlots;
             this.restoreBudgetMillis = restoreBudgetMillis;
             this.restoreChunkWindow = restoreChunkWindow;
+            this.deployMapBakeEnabled = deployMapBakeEnabled;
+            this.deployMapBlocksPerPixel = deployMapBlocksPerPixel;
+            this.deployMapMaxPixels = deployMapMaxPixels;
         }
 
         private static Settings defaults() {
@@ -162,7 +176,7 @@ public final class BattlefieldServerConfig {
                     16, 4, 16,
                     10, 60, 4, 2, 2, false,
                     1.6, 200,
-                    10, 10,
+                    10, 10, 20,
                     15 * 20, 30, 20f, 3f, 18f,
                     15 * 20, 50, 200, 25, 100,
                     6, 12,
@@ -170,7 +184,8 @@ public final class BattlefieldServerConfig {
                     45.0, 0.18, 30 * 20,
                     20.0, 30.0, 40.0f,
                     16384, 0, 2048, 8,
-                    4, 48
+                    4, 48,
+                    true, 3, 320
             );
         }
 
@@ -192,6 +207,7 @@ public final class BattlefieldServerConfig {
                     positive(root.outsideAreaKillTicks, def.outsideAreaKillTicks),
                     positive(root.gameCountdownSeconds, def.gameCountdownSeconds),
                     positive(root.gameEndingSeconds, def.gameEndingSeconds),
+                    positive(root.deployOpenDelayTicks, def.deployOpenDelayTicks),
                     positive(root.bombardDurationTicks, def.bombardDurationTicks),
                     positive(root.bombardTotalBombs, def.bombardTotalBombs),
                     positiveFloat(root.bombardRadius, def.bombardRadius),
@@ -219,7 +235,10 @@ public final class BattlefieldServerConfig {
                     Math.max(512, positive(root.slotSpacingBlocks, def.slotSpacingBlocks) & ~511),
                     positive(root.maxSlots, def.maxSlots),
                     positive(root.restoreBudgetMillis, def.restoreBudgetMillis),
-                    positive(root.restoreChunkWindow, def.restoreChunkWindow)
+                    positive(root.restoreChunkWindow, def.restoreChunkWindow),
+                    root.deployMapBakeEnabled == null ? def.deployMapBakeEnabled : root.deployMapBakeEnabled,
+                    positive(root.deployMapBlocksPerPixel, def.deployMapBlocksPerPixel),
+                    positive(root.deployMapMaxPixels, def.deployMapMaxPixels)
             );
         }
     }
@@ -268,6 +287,8 @@ public final class BattlefieldServerConfig {
         String gameCountdownSeconds_comment = "开局倒计时秒数。";
         Integer gameEndingSeconds = 10;
         String gameEndingSeconds_comment = "结算阶段持续秒数。";
+        Integer deployOpenDelayTicks = 20;
+        String deployOpenDelayTicks_comment = "阵亡后到允许部署之间的等待（tick，20=1 秒）。期间部署界面已打开但按钮不可用。";
 
         Integer bombardDurationTicks = 300;
         String bombardDurationTicks_comment = "区域轰炸持续时间（tick）。";
@@ -328,6 +349,13 @@ public final class BattlefieldServerConfig {
         String restoreBudgetMillis_comment = "地图还原每 tick 最多占用的主线程时间（毫秒），所有还原任务共用。";
         Integer restoreChunkWindow = 48;
         String restoreChunkWindow_comment = "地图还原时预先异步加载的区块数。";
+
+        Boolean deployMapBakeEnabled = true;
+        String deployMapBakeEnabled_comment = "是否用地图模板烘焙部署界面底图（读模板区块数据，不加载世界）。关掉则退回坐标示意图。";
+        Integer deployMapBlocksPerPixel = 3;
+        String deployMapBlocksPerPixel_comment = "底图精度：每像素代表多少格。1 最清晰但很慢，3~4 适合战术图。";
+        Integer deployMapMaxPixels = 320;
+        String deployMapMaxPixels_comment = "底图最长边像素上限，超出自动降低精度。";
 
         static Root defaults() {
             return new Root();

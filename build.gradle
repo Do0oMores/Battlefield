@@ -89,6 +89,17 @@ dependencies {
     implementation fg.deobf("curse.maven:timeless-and-classics-zero-1028108:7401617")
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
     compileOnly "org.spigotmc:spigot-api:1.20.1-R0.1-SNAPSHOT"
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
+}
+
+// 纯逻辑单元测试（部署规则、包编解码）。不加载 Minecraft 运行时，因此跑得很快。
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
 }
 
 tasks.named('processResources', ProcessResources).configure {

@@ -12,28 +12,32 @@ import java.util.function.Supplier;
 /**
  * 客户端请求重新部署。
  * <p>
- * 包里只带「部署点索引 + 配装槽位」，坐标完全由服务端按 arena 配置解析，
- * 客户端无法指定落点，因此不存在"发个包就能传送到任意位置"的漏洞。
+ * 包里只带「部署点稳定标识 + 配装槽位」。标识是 {@code base} / {@code point:A} /
+ * {@code beacon:<uuid>} 这类服务端自己算出来的键，坐标完全由服务端按当前对局状态解析，
+ * 客户端既不能指定落点，也不能凭一个旧 id 复活到已经易主的据点。
+ * <p>
+ * 服务端无论成功失败都会回一个 {@link S2CDeployResultPacket}：失败时界面保持打开并显示原因。
  */
 public final class C2SDeployRequest {
 
-    private final int spawnIndex; // 0=队伍主出生点；1..N=第 N 个可用小队信标
-    private final int bpSlot;     // 1..9
+    public static final int MAX_OPTION_ID = 48;
 
-    public C2SDeployRequest(int spawnIndex, int bpSlot) {
-        this.spawnIndex = spawnIndex;
+    private final String optionId;
+    private final int bpSlot; // 1..9
+
+    public C2SDeployRequest(String optionId, int bpSlot) {
+        this.optionId = optionId == null ? "" : optionId;
         this.bpSlot = bpSlot;
     }
 
     public static void encode(C2SDeployRequest msg, FriendlyByteBuf buf) {
-        buf.writeVarInt(msg.spawnIndex);
+        String id = msg.optionId.length() <= MAX_OPTION_ID ? msg.optionId : msg.optionId.substring(0, MAX_OPTION_ID);
+        buf.writeUtf(id, MAX_OPTION_ID);
         buf.writeVarInt(msg.bpSlot);
     }
 
     public static C2SDeployRequest decode(FriendlyByteBuf buf) {
-        int spawnIndex = buf.readVarInt();
-        int bpSlot = buf.readVarInt();
-        return new C2SDeployRequest(spawnIndex, bpSlot);
+        return new C2SDeployRequest(buf.readUtf(MAX_OPTION_ID), buf.readVarInt());
     }
 
     public static void handle(C2SDeployRequest msg, Supplier<NetworkEvent.Context> ctxSup) {
@@ -43,12 +47,18 @@ public final class C2SDeployRequest {
             if (sp == null) return;
 
             BattlefieldGameManager.DeployResult result =
-                    BattlefieldGameManager.deploy(sp, msg.spawnIndex, msg.bpSlot);
+                    BattlefieldGameManager.deploy(sp, msg.optionId, msg.bpSlot);
+
+            // 阵亡部署会走 PlayerList#respawn，旧 ServerPlayer 已被替换成新实例；
+            // 结果包必须发给当前实例，否则连接虽然还能发（connection 是复用的），玩家引用已经过期。
+            ServerPlayer target = sp.server.getPlayerList().getPlayer(sp.getUUID());
+            if (target == null) return;
 
             if (!result.ok()) {
-                sp.displayClientMessage(
+                target.displayClientMessage(
                         Component.literal(result.message()).withStyle(ChatFormatting.RED), true);
             }
+            BattlefieldNet.sendToPlayer(target, new S2CDeployResultPacket(result.ok(), result.message()));
         });
         ctx.setPacketHandled(true);
     }

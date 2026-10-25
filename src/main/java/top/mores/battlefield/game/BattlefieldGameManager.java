@@ -3,12 +3,14 @@ package top.mores.battlefield.game;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundGameEventPacket;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.scores.PlayerTeam;
@@ -35,7 +37,16 @@ import top.mores.battlefield.breakthrough.Sector;
 import top.mores.battlefield.config.BattlefieldServerConfig;
 import top.mores.battlefield.config.SectorConfigLoader;
 import top.mores.battlefield.config.TaczAmmoCapConfig;
+import top.mores.battlefield.deploy.DeploymentContext;
+import top.mores.battlefield.deploy.DeploymentData;
+import top.mores.battlefield.deploy.DeploymentOption;
+import top.mores.battlefield.deploy.DeploymentRules;
+import top.mores.battlefield.deploy.DeploymentTarget;
+import top.mores.battlefield.deploy.map.BakedDeployMap;
+import top.mores.battlefield.deploy.map.DeployMapService;
 import top.mores.battlefield.net.BattlefieldNet;
+import top.mores.battlefield.net.S2CDeployDataPacket;
+import top.mores.battlefield.net.S2CDeployMapPacket;
 import top.mores.battlefield.net.S2CGameStatePacket;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
 import top.mores.battlefield.server.BackpackBridge;
@@ -82,8 +93,16 @@ public final class BattlefieldGameManager {
 
     private static final Map<String, MatchContext> MATCHES = new LinkedHashMap<>();
     private static final Map<UUID, String> PLAYER_MATCH = new HashMap<>();
-    /** 阵亡玩家在部署界面选择的出生点索引，复活时消费一次 */
-    private static final Map<UUID, Integer> PENDING_SPAWN_INDEX = new HashMap<>();
+    /**
+     * 已经由服务端确认、尚未消费的部署选择。
+     * <p>
+     * 存选项 id 而不是坐标：复活那一刻要用当时的状态重新解析一次——期间据点可能易主、信标可能被打掉。
+     */
+    private static final Map<UUID, PendingDeploy> PENDING_DEPLOY = new HashMap<>();
+    /** 阵亡后部署界面的推送计划：{@code openAt} 打开界面，{@code readyAt} 放开部署按钮。 */
+    private static final Map<UUID, DeployWindow> DEPLOY_WINDOWS = new HashMap<>();
+    /** 部署请求节流时间戳，防止连点导致重复复活/重复发放装备。 */
+    private static final Map<UUID, Integer> DEPLOY_REQUEST_TICK = new HashMap<>();
     private static final Map<UUID, PlacedAmmoStation> PLAYER_AMMO_STATIONS = new HashMap<>();
     /** 正被某局占用（含准备中）的槽位号 */
     private static final Set<Integer> SLOTS_IN_USE = new HashSet<>();
@@ -108,6 +127,14 @@ public final class BattlefieldGameManager {
         SlotRestoreJob restoreJob;
         /** 地图已就绪（静态世界恒为 true；槽位要等还原完成） */
         boolean ready;
+        /** 战区底图烘焙任务与结果。静态世界没有模板，两者都为 null，界面退回坐标示意图。 */
+        @Nullable
+        CompletableFuture<BakedDeployMap> mapJob;
+        @Nullable
+        volatile BakedDeployMap bakedMap;
+        /** 底图编码后的 PNG，只编一次，之后按需发给客户端。 */
+        @Nullable
+        byte[] mapPng;
         boolean released;
         /** 曾有玩家进入过对局世界：结束后槽位必须还原 */
         boolean everEntered;
@@ -174,6 +201,12 @@ public final class BattlefieldGameManager {
 
     private record PendingPrewarm(ServerLevel level, SlotRegistry.Slot slot, SlotGeometry geometry,
                                   CompletableFuture<ArenaTemplate> template) {
+    }
+
+    private record PendingDeploy(String optionId, int backpackSlot) {
+    }
+
+    private record DeployWindow(int openAt, int readyAt) {
     }
 
     // ===================================================================================
@@ -394,7 +427,16 @@ public final class BattlefieldGameManager {
             }
             ctx.everEntered = true;
         }
+        // 部署流程依赖「死亡界面」把玩家留在阵亡状态直到他确认落点。
+        // 战场世界若开着 doImmediateRespawn，客户端会在死亡瞬间自动复活，界面根本没有出现的机会；
+        // 这个开关只存在于登录包里，运行时只能靠这条原版游戏事件同步给客户端（0=显示死亡界面）。
+        syncDeathScreen(player, true);
         teleportInMatch(ctx, player, pos);
+    }
+
+    private static void syncDeathScreen(ServerPlayer player, boolean enabled) {
+        player.connection.send(new ClientboundGameEventPacket(
+                ClientboundGameEventPacket.IMMEDIATE_RESPAWN, enabled ? 0.0F : 1.0F));
     }
 
     private static void teleportInMatch(MatchContext ctx, ServerPlayer player, SectorConfigLoader.Position pos) {
@@ -457,7 +499,9 @@ public final class BattlefieldGameManager {
         ScoreManager.clearPlayer(id);
 
         PLAYER_MATCH.remove(id);
-        PENDING_SPAWN_INDEX.remove(id);
+        PENDING_DEPLOY.remove(id);
+        DEPLOY_WINDOWS.remove(id);
+        DEPLOY_REQUEST_TICK.remove(id);
         PLAYER_AMMO_STATIONS.remove(id);
         ctx.participants.remove(id);
         ctx.outsideAreaTicks.remove(id);
@@ -469,6 +513,9 @@ public final class BattlefieldGameManager {
             } else {
                 BattleTeleport.sendHome(player, PlayerSnapshotStore.restore(player), ctx.arena.lobby);
             }
+            // 离场后把死亡界面行为还给服务器自身的 doImmediateRespawn 设置
+            syncDeathScreen(player, !player.serverLevel().getGameRules()
+                    .getBoolean(GameRules.RULE_DO_IMMEDIATE_RESPAWN));
         }
     }
 
@@ -480,7 +527,9 @@ public final class BattlefieldGameManager {
 
         for (UUID id : ctx.participants) {
             PLAYER_MATCH.remove(id);
-            PENDING_SPAWN_INDEX.remove(id);
+            PENDING_DEPLOY.remove(id);
+            DEPLOY_WINDOWS.remove(id);
+            DEPLOY_REQUEST_TICK.remove(id);
             PLAYER_AMMO_STATIONS.remove(id);
             ScoreManager.clearPlayer(id);
         }
@@ -525,22 +574,133 @@ public final class BattlefieldGameManager {
         }
     }
 
-    /** 解析出来的部署目标：维度 + 坐标 + 朝向。 */
-    private record DeployTarget(ServerLevel level, double x, double y, double z, float yaw) {
+    /**
+     * 客户端请求一份部署数据（按下打开界面的按键、界面定时刷新、部署被拒后刷新）。
+     * <p>
+     * 只有"确实合法打开界面"时才让客户端弹窗；否则只回一份带原因的关闭态数据，
+     * 客户端会把它显示成一条 actionbar，而不是弹出一个点了也没用的空界面。
+     */
+    public static void requestDeploymentData(ServerPlayer player) {
+        sendDeploymentData(player, canOpenDeployScreen(player));
+    }
+
+    private static boolean canOpenDeployScreen(ServerPlayer player) {
+        MatchContext ctx = findContext(player.getUUID());
+        if (ctx == null || !ctx.entered.contains(player.getUUID())) return false;
+        if (ctx.phase == Phase.WAITING || ctx.phase == Phase.ENDING) return false;
+        return TeamManager.getTeam(player) != TeamId.SPECTATOR;
+    }
+
+    private static void sendDeploymentData(ServerPlayer player, boolean showScreen) {
+        if (player == null) return;
+        BattlefieldNet.sendToPlayer(player, new S2CDeployDataPacket(showScreen, buildDeploymentData(player)));
+    }
+
+    /** 与 {@link #sendDeploymentData} 相同，但把数据回传给调用方（用于日志，避免重复构建）。 */
+    private static DeploymentData sendDeploymentDataAndGet(ServerPlayer player) {
+        DeploymentData data = buildDeploymentData(player);
+        BattlefieldNet.sendToPlayer(player, new S2CDeployDataPacket(true, data));
+        return data;
     }
 
     /**
-     * 处理一次重新部署。所有校验都在服务端完成，客户端只提供一个索引。
-     * <p>
-     * 原实现直接把玩家传送到 {@code getSharedSpawnPos()}，有两个问题：
-     * 一是部署点根本没按 spawnIndex 选，二是任何人都能靠发这个包白嫖一次回城传送。
+     * 组装一份部署界面数据。完全由服务端当前状态推导，没有任何客户端入参。
+     */
+    public static DeploymentData buildDeploymentData(ServerPlayer player) {
+        MatchContext ctx = findContext(player.getUUID());
+        if (ctx == null || !ctx.entered.contains(player.getUUID())) {
+            return new DeploymentData("", "", "", "", "", (byte) 2, false, "你当前不在对局中。", 0, List.of());
+        }
+
+        TeamId team = TeamManager.getTeam(player);
+        DeploymentRules rules = DeploymentRules.of(ctx.arena.gameMode);
+        List<DeploymentOption> options = new ArrayList<>();
+        for (DeploymentTarget target : rules.targets(buildDeployContext(player, ctx, team))) {
+            options.add(target.option());
+        }
+
+        String deny = null;
+        if (team == TeamId.SPECTATOR) {
+            deny = "观战者无法部署。";
+        } else if (ctx.phase == Phase.WAITING) {
+            deny = "对局尚未开始。";
+        } else if (ctx.phase == Phase.ENDING) {
+            deny = "对局已结束。";
+        } else if (ctx.phase == Phase.RUNNING && player.isAlive()) {
+            deny = "战斗中无法重新部署。";
+        }
+
+        int wait = waitTicks(player.getUUID(), player.server.getTickCount());
+        if (deny == null && wait > 0) {
+            deny = "阵亡等待中，剩余 " + seconds(wait) + " 秒";
+        }
+
+        BakedDeployMap map = ctx.bakedMap;
+        return new DeploymentData(rules.modeId(), rules.displayName(), ctx.arena.areaName,
+                map == null ? "" : map.mapId(), sectorLabel(ctx),
+                toClientTeamCode(team), deny == null, deny == null ? "" : deny, wait, options);
+    }
+
+    private static int waitTicks(UUID playerId, int now) {
+        DeployWindow window = DEPLOY_WINDOWS.get(playerId);
+        return window == null ? 0 : Math.max(0, window.readyAt() - now);
+    }
+
+    private static String seconds(int ticks) {
+        return String.valueOf((ticks + 19) / 20);
+    }
+
+    private static String sectorLabel(MatchContext ctx) {
+        if (ctx.session == null) return "";
+        Sector sector = ctx.session.currentSector();
+        if (sector == null) return "";
+        return "战线 " + sector.id + "（" + (ctx.session.currentSectorIndex + 1) + "/"
+                + Math.max(1, ctx.session.sectors.size()) + "）";
+    }
+
+    /** 把对局状态翻译成模式规则需要的只读快照。 */
+    private static DeploymentContext buildDeployContext(ServerPlayer player, MatchContext ctx, TeamId team) {
+        List<DeploymentContext.PointState> points = new ArrayList<>();
+        Sector sector = ctx.session == null ? null : ctx.session.currentSector();
+        if (sector != null) {
+            for (CapturePoint point : sector.points) {
+                points.add(new DeploymentContext.PointState(point.id, point.x, point.y, point.z, point.radius,
+                        point.owner, point.getProgress(), point.lastAttackersIn, point.lastDefendersIn));
+            }
+        }
+
+        List<DeploymentContext.BeaconState> beacons = new ArrayList<>();
+        for (BeaconSpawnCandidate candidate : BeaconRespawnLogic.collect(player)) {
+            boolean blocked = candidate.level() == null
+                    || RespawnBeaconPlacement.findStandablePosNearBeacon(candidate.level(), candidate.pos()).isEmpty();
+            beacons.add(new DeploymentContext.BeaconState(candidate.beaconUuid().toString(), candidate.label(),
+                    candidate.pos().x, candidate.pos().y, candidate.pos().z, blocked));
+        }
+
+        SectorConfigLoader.Position base = team == TeamId.SPECTATOR ? null : ctx.spawnOf(team);
+        return new DeploymentContext(team,
+                ctx.session == null ? 0 : ctx.session.currentSectorIndex,
+                ctx.session == null ? 0 : ctx.session.sectors.size(),
+                sector == null ? "" : sector.id,
+                points, beacons,
+                base != null,
+                base == null ? 0 : base.x(),
+                base == null ? 0 : base.y(),
+                base == null ? 0 : base.z());
+    }
+
+    /**
+     * 处理一次重新部署。所有校验都在服务端完成，客户端只提供一个稳定标识。
      *
-     * @param spawnIndex   0 = 队伍主出生点；1..N = 第 N 个可用小队信标
+     * @param optionId     {@code base} / {@code point:A} / {@code beacon:<uuid>}
      * @param backpackSlot 1..9 配装预设槽位
      */
-    public static DeployResult deploy(ServerPlayer player, int spawnIndex, int backpackSlot) {
+    public static DeployResult deploy(ServerPlayer player, String optionId, int backpackSlot) {
         if (backpackSlot < 1 || backpackSlot > 9) {
             return DeployResult.fail("无效的配装槽位。");
+        }
+        if (optionId == null || optionId.isBlank()) {
+            return DeployResult.fail("请先选择部署点。");
         }
 
         MatchContext ctx = findContext(player.getUUID());
@@ -564,20 +724,46 @@ public final class BattlefieldGameManager {
             return DeployResult.fail("战斗中无法重新部署。");
         }
 
-        DeployTarget target = resolveDeployTarget(player, ctx, team, spawnIndex);
-        if (target == null) {
-            return DeployResult.fail("该部署点不可用。");
+        int now = player.server.getTickCount();
+        int wait = waitTicks(player.getUUID(), now);
+        if (wait > 0) {
+            return DeployResult.fail("阵亡等待中，剩余 " + seconds(wait) + " 秒。");
         }
 
-        // 阵亡状态下只记录选择，等 onPlayerRespawn 时再解析一次：
-        // 期间信标可能被打掉，必须用复活那一刻的状态重新判定。
+        // 连点保护：两次请求至少间隔 10 tick。真正防止重复出生的是"已经复活后不再是阵亡状态"，
+        // 这里只是让连点不会打出两串日志/两次配装下发。
+        Integer last = DEPLOY_REQUEST_TICK.get(player.getUUID());
+        if (last != null && now - last < 10) {
+            return DeployResult.fail("部署请求过于频繁，请稍候。");
+        }
+
+        DeploymentTarget target = resolveDeployTarget(player, ctx, team, optionId);
+        if (target == null) {
+            return DeployResult.fail("该部署点已失效。");
+        }
+
+        DEPLOY_REQUEST_TICK.put(player.getUUID(), now);
+        DEPLOY_WINDOWS.remove(player.getUUID());
+
+        // 阵亡状态：记录选择后立刻走原版复活流程。
+        // ServerGamePacketListenerImpl 处理 PERFORM_RESPAWN 时用的也是 PlayerList#respawn，
+        // 因此这里的事件、维度切换、背包处理与玩家手点死亡界面完全一致；
+        // 真正的落点由 onPlayerRespawn 按那一刻的状态再解析一次。
         if (!player.isAlive()) {
-            PENDING_SPAWN_INDEX.put(player.getUUID(), spawnIndex);
+            PENDING_DEPLOY.put(player.getUUID(), new PendingDeploy(optionId, backpackSlot));
+            try {
+                player.server.getPlayerList().respawn(player, false);
+            } catch (Throwable t) {
+                PENDING_DEPLOY.remove(player.getUUID());
+                Battlefield.LOGGER.error("[Battlefield] 玩家 {} 部署时强制复活失败",
+                        player.getGameProfile().getName(), t);
+                return DeployResult.fail("部署失败，请重试。");
+            }
             return DeployResult.OK;
         }
 
-        BattleTeleport.toLevel(player, target.level(), target.x(), target.y(), target.z(), target.yaw(), 0.0f);
-        player.setRespawnPosition(target.level().dimension(),
+        BattleTeleport.toLevel(player, ctx.battleLevel, target.x(), target.y(), target.z(), target.yaw(), 0.0f);
+        player.setRespawnPosition(ctx.battleLevel.dimension(),
                 BlockPos.containing(target.x(), target.y(), target.z()), target.yaw(), true, false);
 
         BackpackBridge.applyBackpackPreset(player, backpackSlot);
@@ -585,21 +771,10 @@ public final class BattlefieldGameManager {
     }
 
     @Nullable
-    private static DeployTarget resolveDeployTarget(ServerPlayer player, MatchContext ctx, TeamId team, int spawnIndex) {
-        if (spawnIndex <= 0) {
-            SectorConfigLoader.Position pos = ctx.spawnOf(team);
-            if (pos == null) return null;
-            return new DeployTarget(ctx.levelOf(pos), pos.x(), pos.y(), pos.z(), player.getYRot());
-        }
-
-        List<BeaconSpawnCandidate> beacons = BeaconRespawnLogic.collect(player);
-        int index = spawnIndex - 1;
-        if (index >= beacons.size()) return null;
-
-        BeaconSpawnCandidate candidate = beacons.get(index);
-        if (candidate.level() == null) return null;
-        Vec3 p = candidate.pos();
-        return new DeployTarget(candidate.level(), p.x, p.y, p.z, candidate.yaw());
+    private static DeploymentTarget resolveDeployTarget(ServerPlayer player, MatchContext ctx, TeamId team, String optionId) {
+        DeploymentRules rules = DeploymentRules.of(ctx.arena.gameMode);
+        // 重新算一遍而不是信任客户端传来的旧数据：据点易主 / 信标消失 / 战线推进都会让旧 id 匹配不上
+        return DeploymentRules.find(rules.targets(buildDeployContext(player, ctx, team)), optionId);
     }
 
     // ===================================================================================
@@ -684,7 +859,9 @@ public final class BattlefieldGameManager {
     public static void onServerStopped(ServerStoppedEvent event) {
         MATCHES.clear();
         PLAYER_MATCH.clear();
-        PENDING_SPAWN_INDEX.clear();
+        PENDING_DEPLOY.clear();
+        DEPLOY_WINDOWS.clear();
+        DEPLOY_REQUEST_TICK.clear();
         PLAYER_AMMO_STATIONS.clear();
         SLOTS_IN_USE.clear();
         PENDING_PREWARM.clear();
@@ -747,6 +924,15 @@ public final class BattlefieldGameManager {
                 ctx.pendingEndWinner = TeamId.DEFENDERS;
             }
         }
+
+        // 阵亡后打开部署界面：死亡事件比 ClientboundPlayerCombatKillPacket 更早触发，
+        // 所以不能在事件里直接发包（会被原版死亡界面盖住），而是排到下一 tick。
+        // readyAt 到点后再推一次，把「阵亡等待」的按钮放开——等待时长由服务端权威状态决定。
+        int now = dead.server.getTickCount();
+        int delay = Math.max(0, BattlefieldServerConfig.get().deployOpenDelayTicks);
+        DEPLOY_WINDOWS.put(dead.getUUID(), new DeployWindow(now + 1, now + delay + 1));
+        Battlefield.LOGGER.info("[Battlefield] {} 阵亡，{} tick 后开放部署（对局 {}）",
+                dead.getGameProfile().getName(), delay, ctx.matchId);
     }
 
     /**
@@ -776,12 +962,20 @@ public final class BattlefieldGameManager {
         TeamId team = TeamManager.getTeam(sp);
         if (team == TeamId.SPECTATOR) return;
 
-        // ① 阵亡前在部署界面明确选过的出生点优先（此时再解析一次，信标可能已被摧毁）
-        Integer pendingIndex = PENDING_SPAWN_INDEX.remove(sp.getUUID());
-        if (pendingIndex != null) {
-            DeployTarget pending = resolveDeployTarget(sp, ctx, team, pendingIndex);
-            if (pending != null) {
-                BattleTeleport.toLevel(sp, pending.level(), pending.x(), pending.y(), pending.z(), pending.yaw(), 0.0f);
+        // ① 部署界面确认过的位置优先（此时再按复活这一刻的状态解析一次，信标可能已被摧毁、据点可能易主）
+        PendingDeploy pending = PENDING_DEPLOY.remove(sp.getUUID());
+        Battlefield.LOGGER.info("[Battlefield] {} 触发复活事件，pending={}",
+                sp.getGameProfile().getName(), pending == null ? "无" : pending.optionId());
+        if (pending != null) {
+            DeploymentTarget target = resolveDeployTarget(sp, ctx, team, pending.optionId());
+            if (target != null) {
+                BattleTeleport.toLevel(sp, ctx.battleLevel, target.x(), target.y(), target.z(), target.yaw(), 0.0f);
+                sp.setRespawnPosition(ctx.battleLevel.dimension(),
+                        BlockPos.containing(target.x(), target.y(), target.z()), target.yaw(), true, false);
+                // 装备来源就是部署配装：死亡掉落已被拦截，这里把选中的预设重新装上
+                BackpackBridge.applyBackpackPreset(sp, pending.backpackSlot());
+                sp.displayClientMessage(Component.literal("已部署至 " + target.option().name())
+                        .withStyle(ChatFormatting.GREEN), true);
                 return;
             }
             sp.displayClientMessage(Component.literal("所选部署点已失效，改用默认出生点。")
@@ -790,11 +984,13 @@ public final class BattlefieldGameManager {
 
         // ② 其次在小队复活信标处重生（离死亡点最近且可站立的那个）
         if (BeaconRespawnLogic.tryAutoRespawn(sp)) {
+            if (pending != null) BackpackBridge.applyBackpackPreset(sp, pending.backpackSlot());
             return;
         }
 
         // ③ 没有信标 / 信标被摧毁 / 被方块堵住 → 回落到队伍主出生点
         teleportInMatch(ctx, sp, ctx.spawnOf(team));
+        if (pending != null) BackpackBridge.applyBackpackPreset(sp, pending.backpackSlot());
     }
 
     @SubscribeEvent
@@ -802,10 +998,47 @@ public final class BattlefieldGameManager {
         if (!Battlefield.isEnabled()) return;
         if (e.phase != TickEvent.Phase.END) return;
         if (!PENDING_PREWARM.isEmpty()) pollPrewarm();
+        if (!DEPLOY_WINDOWS.isEmpty()) tickDeployWindows(e.getServer());
         if (MATCHES.isEmpty()) return;
         // 拷贝一份：结算会把对局从表里摘掉
         for (MatchContext ctx : new ArrayList<>(MATCHES.values())) {
             tickMatch(ctx);
+        }
+    }
+
+    /**
+     * 阵亡后按窗口推送部署数据。
+     * <p>
+     * 一次阵亡会推两次：第一次在死亡后 1 tick（打开界面、带阵亡等待倒计时），
+     * 第二次在等待结束时（把按钮放开）。玩家在这之前自己点了原版复活按钮的，直接丢弃。
+     */
+    private static void tickDeployWindows(MinecraftServer server) {
+        int now = server.getTickCount();
+        Iterator<Map.Entry<UUID, DeployWindow>> it = DEPLOY_WINDOWS.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<UUID, DeployWindow> entry = it.next();
+            DeployWindow window = entry.getValue();
+            if (now < window.openAt()) continue;
+
+            ServerPlayer sp = server.getPlayerList().getPlayer(entry.getKey());
+            MatchContext ctx = findContext(entry.getKey());
+            if (sp == null || sp.isAlive() || ctx == null || ctx.phase != Phase.RUNNING
+                    || !ctx.entered.contains(entry.getKey())) {
+                // 最常见的两种：玩家已经自己复活（原版按钮 / 第三方插件接管），或对局已结束
+                Battlefield.LOGGER.info("[Battlefield] 跳过部署界面推送：{}（alive={} phase={}）",
+                        entry.getKey(), sp != null && sp.isAlive(), ctx == null ? "无对局" : ctx.phase);
+                it.remove();
+                continue;
+            }
+
+            DeploymentData pushed = sendDeploymentDataAndGet(sp);
+            Battlefield.LOGGER.info("[Battlefield] 已向 {} 推送部署数据（{} 个可选点，等待 {} tick）",
+                    sp.getGameProfile().getName(), pushed.options().size(), waitTicks(sp.getUUID(), now));
+            if (now >= window.readyAt()) {
+                it.remove();
+            } else {
+                entry.setValue(new DeployWindow(window.readyAt(), window.readyAt()));
+            }
         }
     }
 
@@ -840,6 +1073,8 @@ public final class BattlefieldGameManager {
                 return;
             }
         }
+
+        pollMapBake(ctx);
 
         forEachEntered(ctx, BattlefieldGameManager::keepPlayerFed);
 
@@ -901,6 +1136,12 @@ public final class BattlefieldGameManager {
             return;
         }
 
+        // 模板里的区块数据是只读的，正好可以在后台线程直接采样烘焙成底图：
+        // 不加载世界、不占区块票据、不阻塞主线程，也不影响槽位还原。
+        if (ctx.mapJob == null && BattlefieldServerConfig.get().deployMapBakeEnabled) {
+            ctx.mapJob = DeployMapService.bakeAsync(template, DeployMapService.rasterFor(ctx.arena, template));
+        }
+
         if (ctx.restoreJob == null) {
             boolean busy = SlotRestoreService.jobFor(ctx.slot.index) != null;
             if (!busy && ctx.slot.isClean(template.fingerprint, ctx.geometry)) {
@@ -920,6 +1161,61 @@ public final class BattlefieldGameManager {
             default -> {
             }
         }
+    }
+
+    /**
+     * 底图烘焙完成后的发布：把模板坐标平移成槽位坐标，编码一次 PNG，然后发给本局参与者。
+     * 客户端按 mapId 缓存，之后的死亡只走请求-应答，不会重复传输。
+     */
+    private static void pollMapBake(MatchContext ctx) {
+        if (ctx.mapJob == null || !ctx.mapJob.isDone()) return;
+
+        CompletableFuture<BakedDeployMap> job = ctx.mapJob;
+        ctx.mapJob = null;
+
+        BakedDeployMap map;
+        try {
+            map = job.join();
+        } catch (Exception e) {
+            Battlefield.LOGGER.warn("[Battlefield] 对局 {} 底图烘焙失败，界面将使用坐标示意图",
+                    ctx.matchId, e.getCause() != null ? e.getCause() : e);
+            return;
+        }
+
+        int dx = ctx.geometry == null ? 0 : ctx.geometry.blockDx();
+        int dz = ctx.geometry == null ? 0 : ctx.geometry.blockDz();
+        BakedDeployMap placed = map.offset(dx, dz);
+
+        byte[] png;
+        try {
+            png = placed.toPng();
+        } catch (RuntimeException e) {
+            Battlefield.LOGGER.warn("[Battlefield] 对局 {} 底图编码失败，界面将使用坐标示意图", ctx.matchId, e);
+            return;
+        }
+
+        ctx.bakedMap = placed;
+        ctx.mapPng = png;
+        for (ServerPlayer sp : participants(ctx)) {
+            sendDeployMap(sp, placed, png);
+        }
+        Battlefield.LOGGER.info("[Battlefield] 对局 {} 底图就绪：{}x{}，{} 格/像素，PNG {} KB",
+                ctx.matchId, placed.width(), placed.height(), placed.blocksPerPixel(), png.length / 1024);
+    }
+
+    private static void sendDeployMap(ServerPlayer player, BakedDeployMap map, byte[] png) {
+        BattlefieldNet.sendToPlayer(player, new S2CDeployMapPacket(map.mapId(),
+                map.minX(), map.minZ(), map.maxX(), map.maxZ(), map.blocksPerPixel(), png));
+    }
+
+    /** 客户端发现手里的 mapId 过期时主动要一次；不在对局或还没烘好就什么都不发。 */
+    public static void requestDeployMap(ServerPlayer player) {
+        MatchContext ctx = findContext(player.getUUID());
+        if (ctx == null || !ctx.entered.contains(player.getUUID())) return;
+        BakedDeployMap map = ctx.bakedMap;
+        byte[] png = ctx.mapPng;
+        if (map == null || png == null) return;
+        sendDeployMap(player, map, png);
     }
 
     private static void onMatchReady(MatchContext ctx) {
@@ -1098,6 +1394,8 @@ public final class BattlefieldGameManager {
                 Collections.emptyList(), Phase.WAITING.ordinal(), "", "", 0
         ));
         BattlefieldNet.sendToPlayer(sp, new S2CSectorAreaPacket(0, Collections.emptyList(), Collections.emptyList()));
+        // 关掉可能还开着的部署界面：离局/结算后旧界面不能继续用来发包
+        BattlefieldNet.sendToPlayer(sp, new S2CDeployDataPacket(false, DeploymentData.CLOSED));
     }
 
     private static void ensureSession(MatchContext ctx) {

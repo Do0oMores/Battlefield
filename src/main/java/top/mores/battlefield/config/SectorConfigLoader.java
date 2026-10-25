@@ -11,6 +11,8 @@ import net.minecraft.world.phys.Vec3;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.breakthrough.CapturePoint;
 import top.mores.battlefield.breakthrough.Sector;
+import top.mores.battlefield.deploy.BreakthroughDeploymentRules;
+import top.mores.battlefield.deploy.DeploymentRules;
 import top.mores.battlefield.net.S2CGameStatePacket;
 
 import java.io.IOException;
@@ -34,6 +36,7 @@ public final class SectorConfigLoader {
         String areaName;
         String templateWorld;
         String world;
+        String gameMode;
         Integer time;
         Integer military;
         Integer addMilitary;
@@ -121,6 +124,11 @@ public final class SectorConfigLoader {
         public final int prewarmSlots;
         /** INSTANCED：需要还原的模板范围（已含边距，已对齐区块）。 */
         public final Bounds templateBounds;
+        /**
+         * 玩法模式标识，决定部署规则（见 {@code deploy.DeploymentRules}）。
+         * 目前只有 {@code breakthrough}，其余模式尚未实现。
+         */
+        public final String gameMode;
         public final int timeMinutes;
         public final int military;
         public final int addMilitary;
@@ -138,7 +146,7 @@ public final class SectorConfigLoader {
         public final List<Sector> sectors;
 
         public ArenaConfig(String areaName, Mode mode, String world, String template, String battleWorld,
-                           int maxConcurrentMatches, int prewarmSlots, Bounds templateBounds,
+                           int maxConcurrentMatches, int prewarmSlots, Bounds templateBounds, String gameMode,
                            int timeMinutes, int military, int addMilitary,
                            int maxPlayerNumber, int attackNumber, int defendNumber, int minPlayerNumber,
                            Position wait, Position lobby, Position firstAttackSpawnPoint, Position firstDefendSpawnPoint,
@@ -151,6 +159,7 @@ public final class SectorConfigLoader {
             this.maxConcurrentMatches = maxConcurrentMatches;
             this.prewarmSlots = prewarmSlots;
             this.templateBounds = templateBounds;
+            this.gameMode = gameMode;
             this.timeMinutes = timeMinutes;
             this.military = military;
             this.addMilitary = addMilitary;
@@ -198,6 +207,7 @@ public final class SectorConfigLoader {
         String world;
         String template;
         String battleWorld;
+        String gameMode;
         Integer maxConcurrentMatches;
         Integer prewarmSlots;
         BoundsJson templateBounds;
@@ -372,8 +382,18 @@ public final class SectorConfigLoader {
                 ? resolveBounds(arena.templateBounds, margin, sectors, wait, firstAttackSpawnPoint, firstDefendSpawnPoint)
                 : null;
 
+        // 玩法模式：决定部署规则。未注册的模式回落到突破，并在加载期告警，避免配错后静默跑成别的模式
+        String gameMode = read(arena == null ? null : arena.gameMode,
+                rootFallback == null ? null : rootFallback.gameMode,
+                BreakthroughDeploymentRules.MODE_ID);
+        if (!DeploymentRules.Registry.knows(gameMode)) {
+            Battlefield.LOGGER.warn("[Battlefield] arena '{}' 的 gameMode '{}' 尚未实现，部署规则回落到 '{}'",
+                    areaName, gameMode, BreakthroughDeploymentRules.MODE_ID);
+            gameMode = BreakthroughDeploymentRules.MODE_ID;
+        }
+
         return new ArenaConfig(areaName, mode, world, mode == Mode.INSTANCED ? template.trim() : null, battleWorld,
-                maxConcurrent, prewarm, bounds,
+                maxConcurrent, prewarm, bounds, gameMode,
                 timeMinutes, military, addMilitary, maxPlayerNumber, attackNumber, defendNumber, minPlayerNumber,
                 wait, lobby, firstAttackSpawnPoint, firstDefendSpawnPoint, winCommand, loseCommand, sectors);
     }
@@ -523,6 +543,7 @@ public final class SectorConfigLoader {
         ArenaJson arena = new ArenaJson();
         arena.areaName = "area_alpha";
         arena.world = "minecraft:overworld";
+        arena.gameMode = BreakthroughDeploymentRules.MODE_ID;
         arena.time = 20;
         arena.military = 300;
         arena.addMilitary = 100;

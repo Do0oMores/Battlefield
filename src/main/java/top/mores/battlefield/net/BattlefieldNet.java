@@ -23,7 +23,10 @@ public final class BattlefieldNet {
     // 2：S2CBombardSmokePacket 由「逐玩家下发 r/g/b」改为「广播 ownerTeam」，字节布局已变
     // 3：与 PR #43-#46 合并后消息表变了（新增部署界面、小队面板 3 个包，消息 id 整体后移），
     //    而那批提交没有升协议号；旧客户端（无论来自哪条分支）一律在握手阶段拒绝，不再静默错位解包
-    private static final String PROTOCOL = "3";
+    // 4：部署界面重做——S2COpenDeployScreenPacket 换成带数据的 S2CDeployDataPacket，
+    //    C2SDeployRequest 的 spawnIndex(int) 换成 optionId(utf)，并新增请求/结果两个包，消息表整体变化
+    // 5：部署界面加战区底图（S2CDeployMapPacket / C2SRequestDeployMap），S2CDeployDataPacket 多一个 mapId 字段
+    private static final String PROTOCOL = "5";
     public static final SimpleChannel CH = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Battlefield.MODID, "main"),
             () -> PROTOCOL, PROTOCOL::equals, PROTOCOL::equals
@@ -68,10 +71,43 @@ public final class BattlefieldNet {
 
         CH.registerMessage(
                 id++,
-                S2COpenDeployScreenPacket.class,
-                S2COpenDeployScreenPacket::encode,
-                S2COpenDeployScreenPacket::decode,
-                S2COpenDeployScreenPacket::handle
+                S2CDeployDataPacket.class,
+                S2CDeployDataPacket::encode,
+                S2CDeployDataPacket::decode,
+                S2CDeployDataPacket::handle
+        );
+
+        CH.registerMessage(
+                id++,
+                C2SRequestDeployData.class,
+                C2SRequestDeployData::encode,
+                C2SRequestDeployData::decode,
+                C2SRequestDeployData::handle
+        );
+
+        CH.registerMessage(
+                id++,
+                S2CDeployResultPacket.class,
+                S2CDeployResultPacket::encode,
+                S2CDeployResultPacket::decode,
+                S2CDeployResultPacket::handle
+        );
+
+        // ===== 部署界面底图 =====
+        CH.registerMessage(
+                id++,
+                S2CDeployMapPacket.class,
+                S2CDeployMapPacket::encode,
+                S2CDeployMapPacket::decode,
+                S2CDeployMapPacket::handle
+        );
+
+        CH.registerMessage(
+                id++,
+                C2SRequestDeployMap.class,
+                C2SRequestDeployMap::encode,
+                C2SRequestDeployMap::decode,
+                C2SRequestDeployMap::handle
         );
 
         CH.registerMessage(

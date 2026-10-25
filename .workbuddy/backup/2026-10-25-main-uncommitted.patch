@@ -1,0 +1,359 @@
+diff --cc src/main/java/top/mores/battlefield/config/SectorConfigLoader.java
+index ec1033c,72de68f..0000000
+--- a/src/main/java/top/mores/battlefield/config/SectorConfigLoader.java
++++ b/src/main/java/top/mores/battlefield/config/SectorConfigLoader.java
+@@@ -364,7 -385,10 +396,14 @@@ public final class SectorConfigLoader 
+          root.arenas = new ArrayList<>();
+          ArenaJson arena = new ArenaJson();
+          arena.areaName = "area_alpha";
+++<<<<<<< HEAD
+ +        arena.world = "minecraft:overworld";
+++=======
++         arena.templateWorld = "minecraft:world";
++         arena.useTemporaryWorld = true;
++         arena.preloadRadiusChunks = 6;
++         arena.instanceWorldPrefix = "bf_inst";
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+          arena.time = 20;
+          arena.military = 300;
+          arena.addMilitary = 100;
+diff --cc src/main/java/top/mores/battlefield/game/BattlefieldGameManager.java
+index 9af53c3,42286c0..0000000
+--- a/src/main/java/top/mores/battlefield/game/BattlefieldGameManager.java
++++ b/src/main/java/top/mores/battlefield/game/BattlefieldGameManager.java
+@@@ -32,8 -30,9 +32,13 @@@ import top.mores.battlefield.breakthrou
+  import top.mores.battlefield.config.SectorConfigLoader;
+  import top.mores.battlefield.net.BattlefieldNet;
+  import top.mores.battlefield.net.S2CGameStatePacket;
++ import top.mores.battlefield.net.S2COpenDeployScreenPacket;
+  import top.mores.battlefield.net.S2CSectorAreaPacket;
+++<<<<<<< HEAD
+ +import top.mores.battlefield.server.BackpackBridge;
+++=======
++ import top.mores.battlefield.server.BattleInstanceWorldService;
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+  import top.mores.battlefield.server.BombardmentManager;
+  import top.mores.battlefield.server.MohistTeleport;
+  import top.mores.battlefield.team.SquadManager;
+@@@ -87,12 -75,11 +93,13 @@@ public final class BattlefieldGameManag
+          int tickCounter = 0;
+          int countdownTicks = 0;
+          int endingTicks = 0;
+ +        /** 上一次已同步给客户端的阶段序号，用于阶段切换时强制补发状态包 */
+ +        int lastSyncedPhase = -1;
+  
+-         MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel battleLevel) {
++         MatchContext(String arenaId, SectorConfigLoader.ArenaConfig arena, ServerLevel templateLevel, ServerLevel battleLevel) {
+              this.arenaId = arenaId;
+              this.arena = arena;
++             this.templateLevel = templateLevel;
+              this.battleLevel = battleLevel;
+          }
+      }
+@@@ -368,8 -220,7 +378,12 @@@
+          PLAYER_AMMO_STATIONS.clear();
+          config = null;
+          BombardmentManager.clearAll();
+++<<<<<<< HEAD
+ +        // 弹药上限配置改为延迟落盘，正常停服时补一次，避免丢掉最后一次 flush 之后的变更
+ +        TaczAmmoCapConfig.flushIfDirty();
+++=======
++         BattleInstanceWorldService.releaseAll();
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+      }
+  
+      @SubscribeEvent
+@@@ -427,33 -278,8 +441,38 @@@
+          if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+          MatchContext ctx = findContext(sp.getUUID());
+          if (ctx == null) return;
+++<<<<<<< HEAD
+ +
+ +        TeamId team = TeamManager.getTeam(sp);
+ +        if (team == TeamId.SPECTATOR) return;
+ +
+ +        // ① 阵亡前在部署界面明确选过的出生点优先（此时再解析一次，信标可能已被摧毁）
+ +        Integer pendingIndex = PENDING_SPAWN_INDEX.remove(sp.getUUID());
+ +        if (pendingIndex != null) {
+ +            DeployTarget pending = resolveDeployTarget(sp, ctx, team, pendingIndex);
+ +            if (pending != null) {
+ +                sp.teleportTo(pending.level(), pending.x(), pending.y(), pending.z(), pending.yaw(), 0.0f);
+ +                return;
+ +            }
+ +            sp.displayClientMessage(Component.literal("所选部署点已失效，改用默认出生点。")
+ +                    .withStyle(ChatFormatting.YELLOW), true);
+ +        }
+ +
+ +        // ② 其次在小队复活信标处重生（离死亡点最近且可站立的那个）
+ +        if (BeaconRespawnLogic.tryAutoRespawn(sp)) {
+ +            return;
+ +        }
+ +
+ +        // ③ 没有信标 / 信标被摧毁 / 被方块堵住 → 回落到队伍主出生点
+ +        if (team == TeamId.ATTACKERS) {
+ +            teleportTo(sp, ctx.arena.firstAttackSpawnPoint);
+ +        } else if (team == TeamId.DEFENDERS) {
+ +            teleportTo(sp, ctx.arena.firstDefendSpawnPoint);
+ +        }
+++=======
++         if (ctx.phase != Phase.RUNNING) return;
++         BattlefieldNet.sendToPlayer(sp, new S2COpenDeployScreenPacket());
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+      }
+  
+      @SubscribeEvent
+@@@ -654,7 -447,9 +676,8 @@@
+          ctx.participants.forEach(ScoreManager::clearPlayer);
+          ctx.participants.forEach(PLAYER_MATCH::remove);
+          ctx.participants.clear();
+ -        ScoreManager.reset();
+          ctx.pendingEndWinner = null;
++         ctx.battleLevel = ctx.templateLevel;
+      }
+  
+      private static void sendClientReset(ServerPlayer sp) {
+@@@ -861,10 -644,30 +884,36 @@@
+  
+      private static void teleportToTeamSpawn(MatchContext ctx, ServerPlayer player, TeamId teamId) {
+          if (teamId == TeamId.ATTACKERS) {
+++<<<<<<< HEAD
+ +            teleportTo(player, ctx.arena.firstAttackSpawnPoint);
+ +        } else if (teamId == TeamId.DEFENDERS) {
+ +            teleportTo(player, ctx.arena.firstDefendSpawnPoint);
+++=======
++             teleportToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
++             setRespawnToBattleLevel(player, ctx.arena.firstAttackSpawnPoint, ctx.battleLevel);
++         } else if (teamId == TeamId.DEFENDERS) {
++             teleportToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
++             setRespawnToBattleLevel(player, ctx.arena.firstDefendSpawnPoint, ctx.battleLevel);
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
++         }
++     }
++ 
++     public static void handleDeployRequest(ServerPlayer player, int spawnIndex) {
++         MatchContext ctx = findContext(player.getUUID());
++         if (ctx == null || ctx.phase != Phase.RUNNING) {
++             var level = player.serverLevel();
++             var pos = level.getSharedSpawnPos();
++             player.teleportTo(level, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5, player.getYRot(), player.getXRot());
++             return;
+          }
++ 
++         TeamId team = TeamManager.getTeam(player);
++         if (spawnIndex == 0) {
++             teleportToTeamSpawn(ctx, player, team);
++             return;
++         }
++ 
++         teleportToTeamSpawn(ctx, player, team);
+      }
+  
+      private static void ensureConfig(ServerLevel defaultLevel) {
+@@@ -917,24 -706,32 +966,42 @@@
+          player.setRespawnPosition(level.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
+      }
+  
+++<<<<<<< HEAD
+ +    /** 把 ctx.participants 解析成在线 ServerPlayer 列表，避免各处重复写一遍 stream 管道。 */
+ +    private static List<ServerPlayer> participants(MatchContext ctx) {
+ +        var server = ctx.battleLevel.getServer();
+ +        if (server == null || ctx.participants.isEmpty()) return Collections.emptyList();
+ +        List<ServerPlayer> players = new ArrayList<>(ctx.participants.size());
+ +        for (UUID id : ctx.participants) {
+ +            ServerPlayer sp = server.getPlayerList().getPlayer(id);
+ +            if (sp != null) players.add(sp);
+ +        }
+ +        return players;
+++=======
++     private static void teleportToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
++         if (pos == null || battleLevel == null) return;
++         player.teleportTo(battleLevel, pos.x(), pos.y(), pos.z(), player.getYRot(), player.getXRot());
++     }
++ 
++     private static void setRespawnToBattleLevel(ServerPlayer player, SectorConfigLoader.Position pos, ServerLevel battleLevel) {
++         if (pos == null || battleLevel == null) return;
++         player.setRespawnPosition(battleLevel.dimension(), net.minecraft.core.BlockPos.containing(pos.toVec3()), 0, true, false);
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+      }
+  
+      private static void forEachParticipant(MatchContext ctx, java.util.function.Consumer<ServerPlayer> action) {
+ -        if (ctx.battleLevel.getServer() == null) return;
+ -        List<ServerPlayer> players = ctx.participants.stream()
+ -                .map(id -> ctx.battleLevel.getServer().getPlayerList().getPlayer(id))
+ -                .filter(Objects::nonNull)
+ -                .toList();
+ -        players.forEach(action);
+ +        for (ServerPlayer sp : participants(ctx)) {
+ +            action.accept(sp);
+ +        }
+      }
+  
++     private static void keepPlayerFed(ServerPlayer sp) {
++         var food = sp.getFoodData();
++         food.setFoodLevel(20);
++         food.setSaturation(20.0F);
++         food.setExhaustion(0.0F);
++     }
++ 
+      private static String participantNames(MatchContext ctx, TeamId teamId) {
+          if (ctx.battleLevel.getServer() == null) return "";
+          return ctx.participants.stream()
+diff --cc src/main/java/top/mores/battlefield/net/C2SDeployRequest.java
+index 35bca7e,3c2ff9c..0000000
+--- a/src/main/java/top/mores/battlefield/net/C2SDeployRequest.java
++++ b/src/main/java/top/mores/battlefield/net/C2SDeployRequest.java
+@@@ -6,6 -4,7 +6,10 @@@ import net.minecraft.network.chat.Compo
+  import net.minecraft.server.level.ServerPlayer;
+  import net.minecraftforge.network.NetworkEvent;
+  import top.mores.battlefield.game.BattlefieldGameManager;
+++<<<<<<< HEAD
+++=======
++ import top.mores.battlefield.server.BackpackBridge;
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+  
+  import java.util.function.Supplier;
+  
+@@@ -42,13 -35,11 +46,19 @@@ public final class C2SDeployRequest 
+              ServerPlayer sp = ctx.getSender();
+              if (sp == null) return;
+  
+ -            if (msg.bpSlot < 1 || msg.bpSlot > 9) return;
+ +            BattlefieldGameManager.DeployResult result =
+ +                    BattlefieldGameManager.deploy(sp, msg.spawnIndex, msg.bpSlot);
+  
+++<<<<<<< HEAD
+ +            if (!result.ok()) {
+ +                sp.displayClientMessage(
+ +                        Component.literal(result.message()).withStyle(ChatFormatting.RED), true);
+ +            }
+++=======
++             BattlefieldGameManager.handleDeployRequest(sp, msg.spawnIndex);
++ 
++             BackpackBridge.applyBackpackPreset(sp, msg.bpSlot);
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+          });
+          ctx.setPacketHandled(true);
+      }
+diff --cc src/main/java/top/mores/battlefield/net/S2CBombardSmokePacket.java
+index cd68f58,0865b34..0000000
+--- a/src/main/java/top/mores/battlefield/net/S2CBombardSmokePacket.java
++++ b/src/main/java/top/mores/battlefield/net/S2CBombardSmokePacket.java
+@@@ -1,33 -1,18 +1,42 @@@
+  package top.mores.battlefield.net;
+  
+- import net.minecraft.client.Minecraft;
+  import net.minecraft.network.FriendlyByteBuf;
++ import net.minecraftforge.api.distmarker.Dist;
++ import net.minecraftforge.fml.DistExecutor;
+  import net.minecraftforge.network.NetworkEvent;
+++<<<<<<< HEAD
+ +import top.mores.battlefield.client.ClientGameState;
+++=======
++ import top.mores.battlefield.client.net.BattlefieldClientPackets;
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+  
+  import java.util.function.Supplier;
+  
+ +/**
+ + * 区域轰炸的烟幕标记。
+ + * <p>
+ + * 颜色不再由服务端逐玩家计算后各发一份，而是随包只带一个"发射方阵营"，
+ + * 由客户端拿自己的阵营比对得出红/蓝。这样整片烟幕可以一次广播给范围内所有人。
+ + */
+  public class S2CBombardSmokePacket {
+ +
+ +    /** 与 ClientGameState.myTeam 对齐：0=攻方 1=守方 2=观战 */
+ +    public static final byte TEAM_ATTACKERS = 0;
+ +    public static final byte TEAM_DEFENDERS = 1;
+ +    public static final byte TEAM_SPECTATOR = 2;
+ +
+ +    // 友方：蓝；敌方：红（保持原有配色）
+ +    private static final float[] FRIENDLY_COLOR = {0.18f, 0.45f, 1.00f};
+ +    private static final float[] ENEMY_COLOR = {1.00f, 0.10f, 0.10f};
+ +
+      public double x, y, z;
+++<<<<<<< HEAD
+ +    public byte ownerTeam;
+++=======
++     public float r, g, b;
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+      public int count;
+-     public float dx, dy, dz;   // 扩散
++     public float dx, dy, dz;
+      public float speed;
+  
+      public S2CBombardSmokePacket(double x, double y, double z,
+@@@ -67,34 -56,8 +76,39 @@@
+      }
+  
+      public static void handle(S2CBombardSmokePacket msg, Supplier<NetworkEvent.Context> ctx) {
+++<<<<<<< HEAD
+ +        ctx.get().enqueueWork(() -> {
+ +            Minecraft mc = Minecraft.getInstance();
+ +            if (mc.level == null) return;
+ +
+ +            // 与旧逻辑等价：发射方阵营 == 本地玩家阵营 视为友方。
+ +            // 观战者（myTeam=2）只有在发射方也是观战时才算友方，否则一律红色。
+ +            float[] color = (ClientGameState.myTeam == msg.ownerTeam) ? FRIENDLY_COLOR : ENEMY_COLOR;
+ +
+ +            // 坐标异常时直接丢弃，避免把 NaN 递给粒子系统
+ +            if (!Double.isFinite(msg.x) || !Double.isFinite(msg.y) || !Double.isFinite(msg.z)) return;
+ +
+ +            // 用彩色粉尘 + 少量烟
+ +            var dust = new net.minecraft.core.particles.DustParticleOptions(
+ +                    new org.joml.Vector3f(color[0], color[1], color[2]), 1.5f
+ +            );
+ +
+ +            for (int i = 0; i < msg.count; i++) {
+ +                double px = msg.x + (mc.level.random.nextDouble() * 2 - 1) * msg.dx;
+ +                double py = msg.y + (mc.level.random.nextDouble() * 2 - 1) * msg.dy;
+ +                double pz = msg.z + (mc.level.random.nextDouble() * 2 - 1) * msg.dz;
+ +
+ +                mc.level.addParticle(dust, px, py, pz, 0, msg.speed, 0);
+ +                if ((i & 1) == 0) {
+ +                    mc.level.addParticle(net.minecraft.core.particles.ParticleTypes.SMOKE,
+ +                            px, py, pz, 0, 0.01, 0);
+ +                }
+ +            }
+ +        });
+++=======
++         ctx.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
++                 () -> () -> BattlefieldClientPackets.handleBombardSmoke(msg)));
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+          ctx.get().setPacketHandled(true);
+      }
+  }
+diff --cc src/main/resources/config/battlefield/sectors.json
+index 9fdf793,0070ffb..0000000
+--- a/src/main/resources/config/battlefield/sectors.json
++++ b/src/main/resources/config/battlefield/sectors.json
+@@@ -2,7 -2,10 +2,14 @@@
+    "arenas": [
+      {
+        "areaName": "area_alpha",
+++<<<<<<< HEAD
+ +      "world": "minecraft:overworld",
+++=======
++       "templateWorld": "minecraft:world",
++       "useTemporaryWorld": true,
++       "preloadRadiusChunks": 6,
++       "instanceWorldPrefix": "bf_inst",
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+        "time": 20,
+        "military": 300,
+        "addMilitary": 100,
+@@@ -80,7 -83,10 +87,14 @@@
+      },
+      {
+        "areaName": "area_bravo",
+++<<<<<<< HEAD
+ +      "world": "minecraft:overworld",
+++=======
++       "templateWorld": "minecraft:world",
++       "useTemporaryWorld": true,
++       "preloadRadiusChunks": 6,
++       "instanceWorldPrefix": "bf_inst",
+++>>>>>>> caad590f861fdace1f506eeb2af05b426a1f254e
+        "time": 20,
+        "military": 300,
+        "addMilitary": 100,

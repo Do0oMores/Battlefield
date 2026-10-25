@@ -167,6 +167,9 @@ public final class ClientGameState {
         lastOwnerTeamById.clear();
         deltaProgressById.clear();
         SCORE_TOASTS.clear();
+        // 对局重置：上一局的部署选择与配装预览不能残留到下一局
+        top.mores.battlefield.client.deploy.DeployClientState.reset();
+        DeployPreviewClientState.clear();
     }
 
     /**

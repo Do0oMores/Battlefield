@@ -1,17 +1,23 @@
 package top.mores.battlefield.client.net;
 
+import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.DeathScreen;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
 import org.joml.Vector3f;
 import top.mores.battlefield.client.ClientGameState;
 import top.mores.battlefield.client.DeployPreviewClientState;
-import top.mores.battlefield.client.ui.RespawnDeployScreen;
+import top.mores.battlefield.client.deploy.DeployMapTexture;
+import top.mores.battlefield.client.ui.RedeployScreen;
 import top.mores.battlefield.game.ScoreReason;
 import top.mores.battlefield.net.S2CBackpackPreview;
 import top.mores.battlefield.net.S2CBombardSmokePacket;
+import top.mores.battlefield.net.S2CDeployDataPacket;
+import top.mores.battlefield.net.S2CDeployMapPacket;
+import top.mores.battlefield.net.S2CDeployResultPacket;
 import top.mores.battlefield.net.S2CGameStatePacket;
-import top.mores.battlefield.net.S2COpenDeployScreenPacket;
 import top.mores.battlefield.net.S2CScoreToastPacket;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
 import top.mores.battlefield.net.team.S2CSquadPanelPacket;
@@ -21,11 +27,55 @@ public final class BattlefieldClientPackets {
     private BattlefieldClientPackets() {
     }
 
-    public static void handleOpenDeployScreen(S2COpenDeployScreenPacket msg) {
+    /**
+     * 部署数据到达：
+     * <ul>
+     *   <li>{@code showScreen=false}：不弹界面，把原因作为 actionbar 提示（例如"战斗中无法重新部署"）；</li>
+     *   <li>界面已打开：原地刷新，保留当前选中项；</li>
+     *   <li>界面未打开且当前只有原版死亡界面：替换成部署界面。</li>
+     * </ul>
+     * 刻意不抢其他容器的界面（{@code mc.screen} 是箱子/背包时不动），避免玩家正在操作时被弹窗打断。
+     */
+    public static void handleDeployData(S2CDeployDataPacket msg) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
-        if (mc.screen != null) return;
-        mc.setScreen(new RespawnDeployScreen());
+
+        if (!msg.showScreen()) {
+            if (mc.screen instanceof RedeployScreen screen) {
+                screen.closeFromServer();
+                return;
+            }
+            String reason = msg.data().denyReason();
+            if (!reason.isBlank()) {
+                mc.player.displayClientMessage(Component.literal(reason).withStyle(ChatFormatting.YELLOW), true);
+            }
+            return;
+        }
+
+        if (mc.screen instanceof RedeployScreen screen) {
+            screen.applyData(msg.data());
+            return;
+        }
+        if (mc.screen == null || mc.screen instanceof DeathScreen) {
+            mc.setScreen(new RedeployScreen(msg.data()));
+        }
+    }
+
+    public static void handleDeployResult(S2CDeployResultPacket msg) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen instanceof RedeployScreen screen) {
+            screen.onDeployResult(msg.ok(), msg.message());
+        }
+    }
+
+    /** 底图到达：先入纹理缓存，界面开着就立刻换图重算投影。 */
+    public static void handleDeployMap(S2CDeployMapPacket msg) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
+        if (!DeployMapTexture.apply(msg)) return;
+        if (mc.screen instanceof RedeployScreen screen) {
+            screen.onMapArrived();
+        }
     }
 
     public static void handleGameState(S2CGameStatePacket msg) {
