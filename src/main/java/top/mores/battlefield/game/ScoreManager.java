@@ -9,6 +9,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import top.mores.battlefield.Battlefield;
 import top.mores.battlefield.config.BattlefieldServerConfig;
+import top.mores.battlefield.game.combat.PlayerHealthService;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CScoreToastPacket;
 import top.mores.battlefield.team.SquadManager;
@@ -207,7 +208,9 @@ public final class ScoreManager {
 
         // ✅ 本段伤害计分 = min(本段实际伤害, 本 tick 剩余池)
         float capped = Math.min(realDamage, remain);
-        int score = Math.round(capped);
+        // 100 血基线可能把子弹伤害按 gunDamageScale 放大过（见 PlayerHealthService），
+        // 伤害分必须按同一倍率折回原尺度，否则「打掉 1 点血」在不同倍率下会值不同的分
+        int score = Math.round(capped * PlayerHealthService.damageScoreCompensation(event.getSource()));
         if (score <= 0) return;
 
         addScore(attacker, score, ScoreReason.DAMAGE);

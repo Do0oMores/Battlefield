@@ -2,6 +2,9 @@ package top.mores.battlefield.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import net.minecraftforge.fml.loading.FMLPaths;
 import top.mores.battlefield.Battlefield;
 
@@ -10,9 +13,17 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 public final class BattlefieldServerConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    /**
+     * 落盘专用：关掉 HTML 转义。
+     * <p>
+     * Gson 默认会把 {@code = < > &} 写成 {@code \u003d} 这种转义序列，注释里的「120=6 秒」
+     * 于是变成「120\u003d6 秒」—— 合法 JSON，但人看着像乱码。这份文件是给人改的，必须原样保留。
+     */
+    private static final Gson PLAIN_GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
     private static final Path FILE = FMLPaths.CONFIGDIR.get().resolve("battlefield").resolve("server_config.json");
 
     private static volatile Settings SETTINGS = Settings.defaults();
@@ -31,10 +42,24 @@ public final class BattlefieldServerConfig {
                 writeDefault();
             }
 
+            Settings next;
             try (Reader reader = Files.newBufferedReader(FILE)) {
-                Root root = GSON.fromJson(reader, Root.class);
-                SETTINGS = Settings.from(root);
+                JsonObject raw = JsonParser.parseReader(reader).getAsJsonObject();
+                // 老版本配置文件里没有新加的字段。这里按当前默认值把缺的键补回去再落盘，
+                // 否则升级后玩家在文件里根本看不到新开关，更没法照文档调参。
+                int added = fillMissingFields(raw);
+                if (added > 0) {
+                    writeJson(raw);
+                    Battlefield.LOGGER.info("[Battlefield] server_config.json 补齐了 {} 个缺失字段（默认值）", added);
+                }
+                next = Settings.from(GSON.fromJson(raw, Root.class));
             }
+
+            if (!next.combat.fallbacks().isEmpty()) {
+                Battlefield.LOGGER.warn("[Battlefield] server_config.json 里这些战斗参数越界，已回退默认值: {}",
+                        next.combat.fallbacks());
+            }
+            SETTINGS = next;
         } catch (Exception e) {
             Battlefield.LOGGER.error("[Battlefield] 加载服务端配置失败，回退默认值: {}", FILE, e);
             SETTINGS = Settings.defaults();
@@ -48,8 +73,26 @@ public final class BattlefieldServerConfig {
     private static void writeDefault() throws IOException {
         Root root = Root.defaults();
         try (Writer writer = Files.newBufferedWriter(FILE)) {
-            GSON.toJson(root, writer);
+            PLAIN_GSON.toJson(root, writer);
         }
+    }
+
+    private static void writeJson(JsonObject raw) throws IOException {
+        try (Writer writer = Files.newBufferedWriter(FILE)) {
+            PLAIN_GSON.toJson(raw, writer);
+        }
+    }
+
+    /** 把默认 Root 里有、文件里没有的键补进 raw。返回补了几个。 */
+    private static int fillMissingFields(JsonObject raw) {
+        JsonObject defaults = GSON.toJsonTree(Root.defaults()).getAsJsonObject();
+        int added = 0;
+        for (Map.Entry<String, JsonElement> entry : defaults.entrySet()) {
+            if (raw.has(entry.getKey())) continue;
+            raw.add(entry.getKey(), entry.getValue());
+            added++;
+        }
+        return added;
     }
 
     public static final class Settings {
@@ -118,6 +161,14 @@ public final class BattlefieldServerConfig {
         /** 底图最长边像素上限，超过则自动降低精度。 */
         public final int deployMapMaxPixels;
 
+        /**
+         * 生命上限 / 脱战回血参数。
+         * <p>
+         * 这 12 个值集中在 {@link CombatConfig} 里校验，因为它们互相咬合（100 血要靠倍率重新标定 TTK，
+         * 回血速率又必须低于交火 DPS 的 1/5），散在同一张扁平表里最容易改一处忘一处。
+         */
+        public final CombatConfig combat;
+
         private Settings(int teamCap, int squadCap, int teamSquadCap,
                          int captureIntervalTicks, int scoreAwardIntervalTicks, int captureBaseStep, int captureBonusStep, int captureEmptyDecayStep, boolean captureDecayOnTie,
                          double areaRadiusScale, int outsideAreaKillTicks,
@@ -130,7 +181,8 @@ public final class BattlefieldServerConfig {
                          double v1KillRadius, double v1MaxDamageRadius, float v1MaxDamage,
                          int slotBaseX, int slotBaseZ, int slotSpacingBlocks, int maxSlots,
                          int restoreBudgetMillis, int restoreChunkWindow,
-                         boolean deployMapBakeEnabled, int deployMapBlocksPerPixel, int deployMapMaxPixels) {
+                         boolean deployMapBakeEnabled, int deployMapBlocksPerPixel, int deployMapMaxPixels,
+                         CombatConfig combat) {
             this.teamCap = teamCap;
             this.squadCap = squadCap;
             this.teamSquadCap = teamSquadCap;
@@ -177,6 +229,7 @@ public final class BattlefieldServerConfig {
             this.deployMapBakeEnabled = deployMapBakeEnabled;
             this.deployMapBlocksPerPixel = deployMapBlocksPerPixel;
             this.deployMapMaxPixels = deployMapMaxPixels;
+            this.combat = combat;
         }
 
         private static Settings defaults() {
@@ -193,11 +246,12 @@ public final class BattlefieldServerConfig {
                     20.0, 30.0, 40.0f,
                     16384, 0, 2048, 8,
                     4, 48,
-                    true, 3, 320
+                    true, 3, 320,
+                    CombatConfig.defaults()
             );
         }
 
-        private static Settings from(Root root) {
+        static Settings from(Root root) {
             Settings def = defaults();
             if (root == null) return def;
 
@@ -247,7 +301,8 @@ public final class BattlefieldServerConfig {
                     positive(root.restoreChunkWindow, def.restoreChunkWindow),
                     root.deployMapBakeEnabled == null ? def.deployMapBakeEnabled : root.deployMapBakeEnabled,
                     positive(root.deployMapBlocksPerPixel, def.deployMapBlocksPerPixel),
-                    positive(root.deployMapMaxPixels, def.deployMapMaxPixels)
+                    positive(root.deployMapMaxPixels, def.deployMapMaxPixels),
+                    CombatConfig.from(root)
             );
         }
     }
@@ -264,7 +319,13 @@ public final class BattlefieldServerConfig {
         return value != null && value > 0 ? value : def;
     }
 
-    private static final class Root {
+    /**
+     * JSON 的原始镜像。字段可空（null 表示文件里没写），校验与钳制全部在 {@link CombatConfig} 里做。
+     * <p>
+     * 包内可见是为了让单元测试能 {@code Gson.fromJson} 到它、再走一遍 {@link Settings#from}，
+     * 把「JSON 字段名 ↔ 配置对象字段」这层最容易错位的映射钉住。
+     */
+    static final class Root {
         String _comment = "Battlefield 服务端热重载配置。执行 /bt reload 即可重新加载本文件。";
 
         Integer teamCap = 16;
@@ -367,6 +428,36 @@ public final class BattlefieldServerConfig {
         String deployMapBlocksPerPixel_comment = "底图精度：每像素代表多少格。1 最清晰但很慢，3~4 适合战术图。";
         Integer deployMapMaxPixels = 320;
         String deployMapMaxPixels_comment = "底图最长边像素上限，超出自动降低精度。";
+
+        // ===== 生命上限与脱战回血（100 血基线）=====
+        Boolean combatRegenEnabled = CombatConfig.DEFAULT_REGEN_ENABLED;
+        String combatRegenEnabled_comment = "脱战回血总开关。关闭后完全依赖医疗包/医疗站。";
+        Double maxHealth = CombatConfig.DEFAULT_MAX_HEALTH;
+        String maxHealth_comment = "对局内玩家最大生命上限。改这个必须同步校准 gunDamageScale，否则 TTK 会整体走样。";
+        Integer regenDelayTicks = CombatConfig.DEFAULT_REGEN_DELAY_TICKS;
+        String regenDelayTicks_comment = "最后一次受伤到开始回血的间隔（tick，120=6 秒）。";
+        Integer regenIntervalTicks = CombatConfig.DEFAULT_REGEN_INTERVAL_TICKS;
+        String regenIntervalTicks_comment = "回血结算间隔（tick，2=0.1 秒结算一次，数字一点一点往上跳）。调大会变回整段跳变，调小则客户端血量同步包更密。";
+        Double regenHealPerInterval = CombatConfig.DEFAULT_REGEN_HEAL_PER_INTERVAL;
+        String regenHealPerInterval_comment = "每次结算恢复的血量。效率 = 本值 / (间隔/20)，默认 1/0.1s = 10 HP/s（每 0.1 秒跳 1 点）。";
+        Double regenMaxHealthFraction = CombatConfig.DEFAULT_MAX_HEALTH_FRACTION;
+        String regenMaxHealthFraction_comment = "最多恢复到上限的百分比（0~1）。1.0=回满。";
+        Integer suppressionDelayBonusTicks = CombatConfig.DEFAULT_SUPPRESSION_DELAY_BONUS_TICKS;
+        String suppressionDelayBonusTicks_comment = "被压制时回血延迟额外增加的 tick。";
+        Double suppressionRateMultiplier = CombatConfig.DEFAULT_SUPPRESSION_RATE_MULTIPLIER;
+        String suppressionRateMultiplier_comment = "被压制时回血速率的倍率（0~1）。";
+        Double suppressionDecayPerSecond = CombatConfig.DEFAULT_SUPPRESSION_DECAY_PER_SECOND;
+        String suppressionDecayPerSecond_comment = "压制值每秒自然衰减量（0~1 范围）。";
+        Boolean shootingBreaksRegen = CombatConfig.DEFAULT_SHOOTING_BREAKS_REGEN;
+        String shootingBreaksRegen_comment = "自己开火是否重置脱战计时。默认 false：脱战指不再挨打，而不是不再开枪。";
+        Double gunDamageScale = CombatConfig.DEFAULT_GUN_DAMAGE_SCALE;
+        String gunDamageScale_comment = "TACZ 子弹伤害倍率，用于对齐 100 血基线。1.0=不改枪械平衡。";
+        Boolean regenOutOfArea = CombatConfig.DEFAULT_REGEN_OUT_OF_AREA;
+        String regenOutOfArea_comment = "离开可活动区域的击杀倒计时期间是否仍可回血。";
+        Boolean enableRegenCeiling = CombatConfig.DEFAULT_ENABLE_REGEN_CEILING;
+        String enableRegenCeiling_comment = "是否启用动态回血上限（战地式）：受伤越重，能靠自然回血补回来的越少，剩下的只能靠医疗包。关闭后回到「脱战就能回满」。";
+        Double maxRecoverableDamage = CombatConfig.DEFAULT_MAX_RECOVERABLE_DAMAGE;
+        String maxRecoverableDamage_comment = "单次受伤最多可自然恢复的血量（100 血标尺填 30 = 30% 最大生命；原版 20 血标尺填 6）。";
 
         static Root defaults() {
             return new Root();

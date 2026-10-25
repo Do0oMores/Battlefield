@@ -44,6 +44,8 @@ import top.mores.battlefield.deploy.DeploymentRules;
 import top.mores.battlefield.deploy.DeploymentTarget;
 import top.mores.battlefield.deploy.map.BakedDeployMap;
 import top.mores.battlefield.deploy.map.DeployMapService;
+import top.mores.battlefield.game.combat.CombatRegenService;
+import top.mores.battlefield.game.combat.PlayerHealthService;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CDeployDataPacket;
 import top.mores.battlefield.net.S2CDeployMapPacket;
@@ -91,8 +93,18 @@ public final class BattlefieldGameManager {
     private static final int NAME_TAG_SYNC_INTERVAL_TICKS = 10;
     /** 冻结阶段允许偏离冻结起点的距离上限（格²）。超过才回拉，避免每 tick 全量传送。 */
     private static final double FROZEN_MAX_DRIFT_SQR = 0.5 * 0.5;
-    /** 对局内维持的饱食度/饱和度满值（原版饥饿条上限）。 */
-    private static final int MAX_FOOD_LEVEL = 20;
+    /**
+     * 对局内维持的饥饿值。
+     * <p>
+     * <b>这是关闭原版自然回血的开关</b>：原版慢速回血的门槛是 {@code foodLevel >= 18}（1 HP / 4 s），
+     * {@code foodLevel == 20 && saturation > 0} 还会升级成快速回血（按饱和度每秒结算）。
+     * 本系统要自己接管回血，所以把饥饿钉在 17 —— 低于 18 就彻底关掉原版回血，
+     * 又高于 6（原版饥饿掉血的阈值），不会让玩家在对局里饿到掉血。
+     * <p>
+     * 必须是「不等于就写」而不是「低于才写」：玩家吃下配装里的食物会把饥饿顶到 18 以上，
+     * 只补低值的话原版自然回血会重新打开，脱战回血的倍率就全成了假的。
+     */
+    private static final int FOOD_TARGET = 17;
 
     private static final Map<String, MatchContext> MATCHES = new LinkedHashMap<>();
     private static final Map<UUID, String> PLAYER_MATCH = new HashMap<>();
@@ -305,6 +317,9 @@ public final class BattlefieldGameManager {
             return team;
         }
         SquadManager.autoAssignSquad(player);
+        // 一进对局就把生命上限顶到配置值（默认 100）。这一步必须早于任何一次「补满」：
+        // PlayerSnapshotStore#captureAndClear 里的 setHealth(getMaxHealth()) 会跟着新的上限走
+        PlayerHealthService.apply(player);
 
         if (ctx.ready) {
             placeJoiner(ctx, player, team);
@@ -497,6 +512,9 @@ public final class BattlefieldGameManager {
         MatchContext ctx = matchId == null ? null : MATCHES.get(matchId);
         if (ctx == null) {
             PLAYER_MATCH.remove(player.getUUID());
+            // 上一局异常中断时可能把 100 血的上限留在身上，这里顺手清掉
+            PlayerHealthService.remove(player);
+            CombatRegenService.onLeave(player.getUUID());
             sendClientReset(player);
             // 不在任何对局里却还留着快照（例如上一局异常中断）：顺手还原
             if (PlayerSnapshotStore.hasSnapshot(player)) {
@@ -535,6 +553,11 @@ public final class BattlefieldGameManager {
         // 先清阵营再摘对局：清阵营会把人从小队里移除，小队是按对局查的
         TeamManager.clearTeam(player);
         ScoreManager.clearPlayer(id);
+        // 战斗状态与生命上限都必须跟着对局一起摘掉：
+        // 上限留着会让玩家回到大厅仍然顶着 100 血，脱战计时留着会让下一局开局就带着上一局的伤
+        CombatRegenService.onLeave(id);
+        PlayerHealthService.remove(player);
+        restoreFoodAfterMatch(player);
 
         PLAYER_MATCH.remove(id);
         PENDING_DEPLOY.remove(id);
@@ -843,6 +866,10 @@ public final class BattlefieldGameManager {
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
         if (PLAYER_MATCH.containsKey(sp.getUUID())) return;
 
+        // 崩服 / 强杀进程后，100 血的上限可能还挂在玩家身上；这里先还原回原版上限，
+        // 否则下一局开局就带着一局残留的属性修饰器
+        PlayerHealthService.remove(sp);
+
         if (TeamManager.getTeam(sp) != TeamId.SPECTATOR) {
             TeamManager.clearTeam(sp);
         }
@@ -908,6 +935,7 @@ public final class BattlefieldGameManager {
         BombardmentManager.clearAll();
         RespawnBeaconManager.clearAll();
         SquadManager.clearAll();
+        CombatRegenService.reset();
         SlotRestoreService.cancelAll();
         TemplateStore.shutdown();
         // 弹药上限配置改为延迟落盘，正常停服时补一次，避免丢掉最后一次 flush 之后的变更
@@ -952,6 +980,11 @@ public final class BattlefieldGameManager {
     public static void onPlayerDeath(LivingDeathEvent event) {
         if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer dead)) return;
+
+        // 脱战计时在死亡瞬间就该丢掉：不管当前是哪个阶段、有没有 session，
+        // 复活时都要从「重新开始的 6 秒」算起，而不是继承死亡前的进度
+        CombatRegenService.onDeath(dead.getUUID());
+
         MatchContext ctx = findContext(dead.getUUID());
         if (ctx == null || ctx.phase != Phase.RUNNING || ctx.session == null) return;
 
@@ -1004,6 +1037,11 @@ public final class BattlefieldGameManager {
         // 客户端随之把 showDeathScreen 重置——于是第二次阵亡起，客户端会自己重生掉，部署界面根本没机会打开。
         // 每复活一次就把状态拨回「显示死亡界面」，保证下一次阵亡仍由部署界面接管。
         syncDeathScreen(sp, true);
+        // 复活走的是新的玩家实体。属性虽然会被 PlayerList#respawn 复制过去，
+        // 但这里再显式挂一次（成本只有一次属性查找），兜住所有会走到这条路径的分支
+        PlayerHealthService.apply(sp);
+        CombatRegenService.onRespawn(sp);
+        if (sp.getHealth() < sp.getMaxHealth()) sp.setHealth(sp.getMaxHealth());
         // 复活瞬间直接补满，不用等下一次周期维持
         keepPlayerFed(sp);
 
@@ -1150,11 +1188,21 @@ public final class BattlefieldGameManager {
                 startEnding(ctx, TeamId.DEFENDERS);
                 return;
             }
-            enforceMovableArea(ctx);
+
+            // 每 tick 只解析一次参与者列表：出界校验、占点推进、脱战回血共用同一份。
+            // 原实现在这个分支里会 alloc 两次 ArrayList，而这里本来就每 tick 都要遍历一遍。
+            List<ServerPlayer> active = participants(ctx);
+            enforceMovableArea(ctx, active);
 
             if (ctx.tickCounter % BattlefieldServerConfig.get().captureIntervalTicks == 0) {
-                ctx.sectorManager.tick(ctx.session, participants(ctx));
+                ctx.sectorManager.tick(ctx.session, active);
                 checkWinConditionBySector(ctx);
+            }
+
+            // 脱战回血：只在 RUNNING 结算；出界倒计时中的玩家默认不回血（出界已经判死，回血只是延长痛苦）
+            MinecraftServer server = ctx.battleLevel.getServer();
+            if (server != null) {
+                CombatRegenService.tick(active, server.getTickCount(), ctx.outsideAreaTicks::containsKey);
             }
 
             if (ctx.pendingEndWinner != null) {
@@ -1664,16 +1712,31 @@ public final class BattlefieldGameManager {
     }
 
     /**
-     * 把饱食度维持在满值：装备与补给全部来自配装，饥饿条不该成为战场变量。
+     * 把饥饿值钉在 {@link #FOOD_TARGET}，并把饱和度清零。
      * <p>
-     * 只在真的低于目标值时写入。值没变还写等于白花 CPU，而且 32 人局下这种白写是每秒上千次。
+     * 饥饿条不该成为战场变量（装备全部来自配装），更关键的是：饱食度 18 以上原版会自己回血，
+     * 那会让脱战回血的速率完全不可控。所以这里不只是「喂饱」，而是「喂到刚好不回血」。
+     * <p>
+     * 只在真的不等于目标值时写入。值没变还写等于白花 CPU，而且 32 人局下这种白写是每秒上千次。
      * 调用频率由 {@code BattlefieldServerConfig#foodMaintainIntervalTicks} 控制（默认 3 秒一次）。
      */
     private static void keepPlayerFed(ServerPlayer sp) {
         var food = sp.getFoodData();
-        if (food.getFoodLevel() != MAX_FOOD_LEVEL) food.setFoodLevel(MAX_FOOD_LEVEL);
-        if (food.getSaturationLevel() < MAX_FOOD_LEVEL) food.setSaturation(MAX_FOOD_LEVEL);
+        if (food.getFoodLevel() != FOOD_TARGET) food.setFoodLevel(FOOD_TARGET);
+        if (food.getSaturationLevel() != 0.0F) food.setSaturation(0.0F);
         if (food.getExhaustionLevel() > 0.0F) food.setExhaustion(0.0F);
+    }
+
+    /**
+     * 离局后把饥饿值还给玩家。
+     * <p>
+     * 对局内被钉在 17，这个值出了对局会变成副作用：原版自然回血要求 {@code foodLevel >= 18}，
+     * 玩家回到大厅后不掉血也回不了血，还以为是卡了。这里补回满值，剩下的交还原版。
+     */
+    private static void restoreFoodAfterMatch(ServerPlayer sp) {
+        var food = sp.getFoodData();
+        if (food.getFoodLevel() < 20) food.setFoodLevel(20);
+        if (food.getSaturationLevel() < 5.0F) food.setSaturation(5.0F);
     }
 
     private static String participantNames(MatchContext ctx, TeamId teamId) {
@@ -1683,7 +1746,7 @@ public final class BattlefieldGameManager {
                 .collect(Collectors.joining(", "));
     }
 
-    private static void enforceMovableArea(MatchContext ctx) {
+    private static void enforceMovableArea(MatchContext ctx, List<ServerPlayer> participants) {
         var s = ctx.session;
         var sector = s.currentSector();
         if (sector == null) {
@@ -1693,7 +1756,7 @@ public final class BattlefieldGameManager {
 
         // 只遍历本局参与者。原实现遍历全服在线玩家再用 participants.contains 过滤，
         // 多局并行时是 O(局数 × 全服人数) / tick。
-        for (ServerPlayer sp : participants(ctx)) {
+        for (ServerPlayer sp : participants) {
             if (sp.serverLevel() != s.level || sp.isCreative() || sp.isSpectator()) continue;
 
             TeamId t = TeamManager.getTeam(sp);

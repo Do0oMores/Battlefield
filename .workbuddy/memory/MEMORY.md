@@ -9,7 +9,8 @@ Minecraft 1.20.1 Forge 模组（Forge 47.4.16 / Java 17 / 依赖 TACZ 1.1.8）�
 1. **编译必须带绕代理参数**（本机 127.0.0.1:7890 常失效，JDK 证书也校验不过）：
    `./gradlew build -Dhttp.proxyHost= -Dhttps.proxyHost= -Dhttp.proxyPort=0 -Dhttps.proxyPort=0 -Dhttp.nonProxyHosts='*' -Dnet.minecraftforge.gradle.check.certs=false -Djavax.net.ssl.trustStoreType=WINDOWS-ROOT`
 2. **服务端与客户端必须放同一份 jar**，否则 Forge 握手阶段拒绝连接。
-3. **`BattlefieldNet.PROTOCOL` 当前是 `"2"`**。若再改动任何包的字段布局，必须升号。
+3. **`BattlefieldNet.PROTOCOL` 当前是 `"5"`**（历史：2 烟幕包 / 3 消息表移动 / 4 部署界面 optionId / 5 战区底图）。
+   若再改动任何包的字段布局，必须升号。
 4. **队伍/小队/背包快照的 SavedData 一律锚定 `server.overworld()`**，不要用 `player.serverLevel()`。
 5. **新增世界不要靠 `Bukkit.createWorld()` 生成**（会跑默认地形生成器）；实例世界必须"先复制目录再加载"。
 6. **配置里写维度用 `minecraft:overworld`**。`minecraft:world` 是非法维度键（主世界文件夹叫 world，但键是 overworld）。
@@ -27,10 +28,11 @@ Minecraft 1.20.1 Forge 模组（Forge 47.4.16 / Java 17 / 依赖 TACZ 1.1.8）�
 ## 当前状态
 
 已修并实测通过：性能六项（sendState / 状态包降频 / 冻结传送 / 移动区域遍历 / 记分板 / 弹药上限 IO）、
-烟幕与 V1 尾迹发包、七项系统性缺陷（部署校验、跨维度存档、世界名、背包快照、计分隔离、包长约束、信标复活）。
+烟幕与 V1 尾迹发包、七项系统性缺陷（部署校验、跨维度存档、世界名、背包快照、计分隔离、包长约束、信标复活）、
+**100 血基线 + 脱战回血**（见下「回血底盘」）。
 
-未实测：部署包校验（需客户端发包）、信标实际放置。
-最大缺口：无兵种体系、无武器/配件准入、无载具、无结算战绩。
+未实测：部署包校验（需客户端发包）、信标实际放置、死亡→部署复活后的 6 秒冷却（需点界面）。
+最大缺口：无兵种模型/界面、无武器配件准入、无载具、无结算战绩。
 
 ## 代码线现状（2026-10-25 已合并，单一主干）
 
@@ -60,6 +62,37 @@ worktree 已无独有内容，可安全 `git worktree remove`。
 - 新增 `server/arena/` 槽位体系（模板/几何/注册/还原）、`PacketRateLimiter`、`BattleTeleport`
 
 完整审计见 `docs/战地模式-审计报告-2026-10-24.md`。
+
+### 兵种系统的技术底盘（2026-10-25 核实，只查不改）
+
+- **武器准入有官方钩子**：TACZ `GunShootEvent` / `GunFireEvent` 在服务端发布且可取消，
+  `LivingEntityShoot.shoot` 取消后返回 `ShootResult.FORGE_EVENT_CANCEL`（字节码已确认）→ 无需 mixin 即可让非法枪打不响。
+- **枪械分类只能取 `CommonGunIndex.getType()` 的字符串**（数据包自由填），必须自己维护 gunId→兵种白名单，不能只信 type。
+- **回血底盘已重建（2026-10-25，替代下面那条旧结论）**：
+  `keepPlayerFed()` 现在把饥饿钉在 **17**（原版门槛 18 → 自然回血彻底关闭，且「不等于就写」防止吃食物顶回 18+），
+  `game/combat/CombatRegenService` **每 0.1 秒结算 +1 点**（`regenIntervalTicks=2 / regenHealPerInterval=1.0`，
+  10 HP/s，逐点上涨而不是整段跳），延迟 6 秒、压制时 ×0.25 且 +3 秒。
+  100 血是真的改 `Attributes.MAX_HEALTH`（`PlayerHealthService`，固定 UUID 的永久修饰器，进局挂/离局摘）。
+  配置在 `server_config.json` 的 12 个新字段（`CombatConfig` 校验，`[0,1]` 用 `fraction()` 钳制）。
+  兵种倍率通过 `CombatRegenService.setProfileProvider(...)` + `RegenProfile.scaled(delay, rate)` 注入，结算逻辑不用改。
+  **`gunDamageScale` 仍是 1.0，单发伤害没有实测回填 → 100 血下 TTK 现在是原来的 5 倍，这是已知未完成项。**
+- **动态回血上限（2026-10-26 已落地，战地式伤情）**：
+  受伤时 `ceiling -= (真实损失 - min(损失, maxRecoverableDamage))`，只能降不能升，默认 30（100 血标尺）。
+  挂在 `LivingDamageEvent`（LOWEST）：护甲/附魔/吸收盾都已结算完，`getAmount()` 就是真实掉血；
+  **不要改回 `LivingHurtEvent`**（会把伤害算多）。
+  **公式与设计稿的偏差**：设计稿 `min(旧上限, 新血量+可恢复量)` 在「回血途中再挨一下」时会把还没回上来的血
+  判成永久伤，实现取 `min(旧上限, max(旧上限-永久伤, 新血量+可恢复量))`，两种场景都自洽。
+  治疗入口 `PlayerHealthService.healPlayer(player, amount, resetRegenCeiling)`（死人不救 / 不超上限）。
+  指令 `/bt heal|regeninfo [player]`，`/battlefield` 是 `/bt` 的 **redirect 别名**。
+  已知缺口：客户端血条淡红段不反映 ceiling，要修得发新包（PROTOCOL 5→6）。
+- 旧的「keepPlayerFed 喂 20 导致原版回血满速」结论已作废，不要再按它设计。
+- **配装源头是外部 Bukkit 插件 `Backpack`**（`server/BackpackBridge` 反射，9 个槽位，部署界面已能预览）。
+  兵种限定武器的真正落点在配装，而不是开火拦截。
+- `mixins.json` 已配好但 `mixins` 数组为空 —— 至今零 mixin，新增会引入 Mohist 上的首测风险。
+- 已具备可复用的骨架：受伤/击杀事件（`ScoreManager`）、队伍判定（`TeamManager`）、
+  客户端输入封锁（`BattlefieldClientMovementBlocker`）、世界空间渲染（`BattlefieldAreaRenderer`）、
+  弹药写入（`TaczAmmoStationBlock` 的 count/giveInventoryAmmo）、信标全套（`RespawnBeacon*`）。
+
 
 测试环境：服务端 `C:\Users\MSN\Desktop\mohist1.20`，客户端 `C:\Users\MSN\Desktop\mc\.minecraft`。
 实机测试流程已封装为用户级 skill `mc-mod-live-test`。
