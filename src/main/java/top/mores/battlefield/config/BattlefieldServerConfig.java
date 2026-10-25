@@ -71,6 +71,13 @@ public final class BattlefieldServerConfig {
         public final int gameEndingSeconds;
         /** 阵亡后到允许部署之间的等待（tick）。界面在这个等待期间打开并显示倒计时。 */
         public final int deployOpenDelayTicks;
+        /**
+         * 对局内维持饱食度的刷新间隔（tick）。
+         * <p>
+         * 原先每 tick 都把这几个值写一遍，32 人局等于每秒近 2000 次无谓写入；
+         * 饥饿值在 3 秒内的自然波动肉眼看不出，默认 60 tick（3 秒）足够。
+         */
+        public final int foodMaintainIntervalTicks;
 
         public final int bombardDurationTicks;
         public final int bombardTotalBombs;
@@ -114,7 +121,7 @@ public final class BattlefieldServerConfig {
         private Settings(int teamCap, int squadCap, int teamSquadCap,
                          int captureIntervalTicks, int scoreAwardIntervalTicks, int captureBaseStep, int captureBonusStep, int captureEmptyDecayStep, boolean captureDecayOnTie,
                          double areaRadiusScale, int outsideAreaKillTicks,
-                         int gameCountdownSeconds, int gameEndingSeconds, int deployOpenDelayTicks,
+                         int gameCountdownSeconds, int gameEndingSeconds, int deployOpenDelayTicks, int foodMaintainIntervalTicks,
                          int bombardDurationTicks, int bombardTotalBombs, float bombardRadius, float bombardDamageRadius, float bombardMaxDamage,
                          int scoreStreakWindowTicks, int scoreStreakKillBonus, int scoreSquadWipeBonus, int scoreHeadshotKillBonus, int scoreKillBase,
                          int scoreToastMergeWindowTicks, int scoreToastFlushAfterTicks,
@@ -138,6 +145,7 @@ public final class BattlefieldServerConfig {
             this.gameCountdownSeconds = gameCountdownSeconds;
             this.gameEndingSeconds = gameEndingSeconds;
             this.deployOpenDelayTicks = deployOpenDelayTicks;
+            this.foodMaintainIntervalTicks = foodMaintainIntervalTicks;
             this.bombardDurationTicks = bombardDurationTicks;
             this.bombardTotalBombs = bombardTotalBombs;
             this.bombardRadius = bombardRadius;
@@ -176,7 +184,7 @@ public final class BattlefieldServerConfig {
                     16, 4, 16,
                     10, 60, 4, 2, 2, false,
                     1.6, 200,
-                    10, 10, 20,
+                    10, 10, 20, 60,
                     15 * 20, 30, 20f, 3f, 18f,
                     15 * 20, 50, 200, 25, 100,
                     6, 12,
@@ -208,6 +216,7 @@ public final class BattlefieldServerConfig {
                     positive(root.gameCountdownSeconds, def.gameCountdownSeconds),
                     positive(root.gameEndingSeconds, def.gameEndingSeconds),
                     positive(root.deployOpenDelayTicks, def.deployOpenDelayTicks),
+                    positive(root.foodMaintainIntervalTicks, def.foodMaintainIntervalTicks),
                     positive(root.bombardDurationTicks, def.bombardDurationTicks),
                     positive(root.bombardTotalBombs, def.bombardTotalBombs),
                     positiveFloat(root.bombardRadius, def.bombardRadius),
@@ -289,6 +298,8 @@ public final class BattlefieldServerConfig {
         String gameEndingSeconds_comment = "结算阶段持续秒数。";
         Integer deployOpenDelayTicks = 20;
         String deployOpenDelayTicks_comment = "阵亡后到允许部署之间的等待（tick，20=1 秒）。期间部署界面已打开但按钮不可用。";
+        Integer foodMaintainIntervalTicks = 60;
+        String foodMaintainIntervalTicks_comment = "对局内维持饱食度的刷新间隔（tick，60=3 秒）。调小更实时、调大更省性能。";
 
         Integer bombardDurationTicks = 300;
         String bombardDurationTicks_comment = "区域轰炸持续时间（tick）。";

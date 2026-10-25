@@ -91,6 +91,8 @@ public final class BattlefieldGameManager {
     private static final int NAME_TAG_SYNC_INTERVAL_TICKS = 10;
     /** 冻结阶段允许偏离冻结起点的距离上限（格²）。超过才回拉，避免每 tick 全量传送。 */
     private static final double FROZEN_MAX_DRIFT_SQR = 0.5 * 0.5;
+    /** 对局内维持的饱食度/饱和度满值（原版饥饿条上限）。 */
+    private static final int MAX_FOOD_LEVEL = 20;
 
     private static final Map<String, MatchContext> MATCHES = new LinkedHashMap<>();
     private static final Map<UUID, String> PLAYER_MATCH = new HashMap<>();
@@ -440,6 +442,8 @@ public final class BattlefieldGameManager {
             enterMatchWorld(ctx, player, ctx.spawnOf(team));
         }
         setRespawnToTeamSpawn(ctx, player, team);
+        // 进场先补满一次：周期维持是 3 秒一次，不该让新进场的玩家带着饥饿条等那一刻。
+        keepPlayerFed(player);
 
         // 中途加入者拿不到开局时下发的区域包，这里单独补一份，
         // 否则客户端没有区域框、也没有出界警告，但服务端照样按矩形计时击杀。
@@ -1000,6 +1004,8 @@ public final class BattlefieldGameManager {
         // 客户端随之把 showDeathScreen 重置——于是第二次阵亡起，客户端会自己重生掉，部署界面根本没机会打开。
         // 每复活一次就把状态拨回「显示死亡界面」，保证下一次阵亡仍由部署界面接管。
         syncDeathScreen(sp, true);
+        // 复活瞬间直接补满，不用等下一次周期维持
+        keepPlayerFed(sp);
 
         TeamId team = TeamManager.getTeam(sp);
         if (team == TeamId.SPECTATOR) return;
@@ -1118,7 +1124,11 @@ public final class BattlefieldGameManager {
 
         pollMapBake(ctx);
 
-        forEachEntered(ctx, BattlefieldGameManager::keepPlayerFed);
+        // 饱食度维持按间隔执行：原先每 tick 都给每个在场玩家写一遍食物值，32 人局等于每秒近 2000 次写入，
+        // 而饥饿值在几秒内的自然波动肉眼看不出。进入对局与复活时会立刻补一次，不必等这个间隔。
+        if (ctx.tickCounter % Math.max(1, BattlefieldServerConfig.get().foodMaintainIntervalTicks) == 0) {
+            forEachEntered(ctx, BattlefieldGameManager::keepPlayerFed);
+        }
 
         if (ctx.phase == Phase.COUNTDOWN) {
             enforceFrozenPhaseMovement(ctx);
@@ -1653,11 +1663,17 @@ public final class BattlefieldGameManager {
         }
     }
 
+    /**
+     * 把饱食度维持在满值：装备与补给全部来自配装，饥饿条不该成为战场变量。
+     * <p>
+     * 只在真的低于目标值时写入。值没变还写等于白花 CPU，而且 32 人局下这种白写是每秒上千次。
+     * 调用频率由 {@code BattlefieldServerConfig#foodMaintainIntervalTicks} 控制（默认 3 秒一次）。
+     */
     private static void keepPlayerFed(ServerPlayer sp) {
         var food = sp.getFoodData();
-        food.setFoodLevel(20);
-        food.setSaturation(20.0F);
-        food.setExhaustion(0.0F);
+        if (food.getFoodLevel() != MAX_FOOD_LEVEL) food.setFoodLevel(MAX_FOOD_LEVEL);
+        if (food.getSaturationLevel() < MAX_FOOD_LEVEL) food.setSaturation(MAX_FOOD_LEVEL);
+        if (food.getExhaustionLevel() > 0.0F) food.setExhaustion(0.0F);
     }
 
     private static String participantNames(MatchContext ctx, TeamId teamId) {
