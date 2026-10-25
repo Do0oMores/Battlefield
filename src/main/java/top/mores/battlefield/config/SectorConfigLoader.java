@@ -345,6 +345,20 @@ public final class SectorConfigLoader {
         attackNumber = readPositive(arena == null ? null : arena.attackNumber, rootFallback == null ? null : rootFallback.attackNumber, attackNumber);
         defendNumber = readPositive(arena == null ? null : arena.defendNumber, rootFallback == null ? null : rootFallback.defendNumber, defendNumber);
 
+        // 总人数上限配得比「开局所需人数」还小，是一局永远开不起来的死配置：
+        // 第一个玩家进来就判定满员，后来者只能另开一局，而新局同样只装得下一个人，minPlayerNumber 永远达不到。
+        // 这里按开局人数下限抬上去（队伍容量只限制分边，不参与这里），并留一条告警便于发现配置写错了。
+        if (maxPlayerNumber < minPlayerNumber) {
+            Battlefield.LOGGER.warn("[Battlefield] arena '{}' 的 maxPlayerNumber={} 小于 minPlayerNumber={}，"
+                    + "对局永远无法开局，已按 {} 处理", areaName, maxPlayerNumber, minPlayerNumber, minPlayerNumber);
+            maxPlayerNumber = minPlayerNumber;
+        }
+        if (attackNumber + defendNumber < minPlayerNumber) {
+            Battlefield.LOGGER.warn("[Battlefield] arena '{}' 的两队容量合计 {} 小于 minPlayerNumber={}，"
+                    + "开局人数永远凑不齐，请调大 attackNumber/defendNumber",
+                    areaName, attackNumber + defendNumber, minPlayerNumber);
+        }
+
         wait = parsePos(arena == null ? null : arena.wait, rootFallback == null ? null : rootFallback.wait, wait);
         lobby = parsePos(arena == null ? null : arena.lobby, rootFallback == null ? null : rootFallback.lobby, lobby);
         firstAttackSpawnPoint = parsePos(arena == null ? null : arena.firstAttackSpawnPoint, rootFallback == null ? null : rootFallback.firstAttackSpawnPoint, firstAttackSpawnPoint);

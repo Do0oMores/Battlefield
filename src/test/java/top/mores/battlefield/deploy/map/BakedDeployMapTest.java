@@ -7,6 +7,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -44,14 +45,26 @@ class BakedDeployMapTest {
     }
 
     @Test
-    void offsetOnlyMovesBounds() {
+    void offsetMovesBoundsAndChangesMapId() {
         BakedDeployMap map = sample();
         BakedDeployMap moved = map.offset(16384, -32);
         assertEquals(100 + 16384, moved.minX());
         assertEquals(200 - 32, moved.minZ());
-        assertEquals(map.mapId(), moved.mapId(), "同一张地形图，id 不应该因为槽位而变");
+        // 客户端按 mapId 判断「手里这张图还能不能用」。边界变了 id 必须跟着变，
+        // 否则第二局（换槽位）会沿用第一局的贴图范围，底图错位、比例也不对。
+        assertNotEquals(map.mapId(), moved.mapId(), "槽位平移后 mapId 必须变化");
+        assertTrue(moved.mapId().startsWith(map.mapId()), "id 应保留地形指纹，只追加槽位偏移");
         assertEquals(map.width(), moved.width());
         assertEquals(map.argb(), moved.argb());
+    }
+
+    @Test
+    void sameSlotProducesSameMapId() {
+        BakedDeployMap map = sample();
+        // 同一槽位重复下发时 id 不变，客户端才不会重复解码同一张图
+        assertEquals(map.offset(1024, 0).mapId(), map.offset(1024, 0).mapId());
+        assertNotEquals(map.offset(1024, 0).mapId(), map.offset(1152, 0).mapId(),
+                "不同槽位的 id 必须不同");
     }
 
     @Test

@@ -22,10 +22,16 @@ public record BakedDeployMap(String mapId,
                              int width, int height,
                              int[] argb) {
 
-    /** 平移边界（像素不变）。槽位不同、地形相同，可以直接复用。 */
+    /**
+     * 平移边界（像素不变）。槽位不同、地形相同，可以直接复用同一份像素。
+     * <p>
+     * mapId 必须跟着偏移走：客户端按 mapId 判断「手里这张图还能不能用」，
+     * 同一个 id 配不同边界时，第二局会直接沿用上一局的贴图范围——底图被贴到第一局槽位的坐标上，
+     * 表现为整张图错位、比例看起来也不对。同一槽位重复推送同一个 id，客户端仍然不会重复解码。
+     */
     public BakedDeployMap offset(int dx, int dz) {
         if (dx == 0 && dz == 0) return this;
-        return new BakedDeployMap(mapId, minX + dx, minZ + dz, maxX + dx, maxZ + dz,
+        return new BakedDeployMap(mapId + "@" + dx + "," + dz, minX + dx, minZ + dz, maxX + dx, maxZ + dz,
                 blocksPerPixel, width, height, argb);
     }
 

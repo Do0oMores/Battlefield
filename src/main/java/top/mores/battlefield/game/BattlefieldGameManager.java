@@ -56,6 +56,7 @@ import top.mores.battlefield.server.arena.*;
 import top.mores.battlefield.team.SquadManager;
 import top.mores.battlefield.team.TeamId;
 import top.mores.battlefield.team.TeamManager;
+import top.mores.battlefield.team.TeamSavedData;
 
 import javax.annotation.Nullable;
 import java.nio.file.Files;
@@ -323,10 +324,43 @@ public final class BattlefieldGameManager {
             if (ctx.released || !ctx.arena.areaName.equals(arena.areaName)) continue;
             // 结算阶段不接受新玩家：此时参与者正在被清背包/传送回大厅，中途插入只会拿到一份错乱的状态
             if (ctx.phase == Phase.ENDING) continue;
-            if (ctx.participants.size() >= ctx.arena.maxPlayerNumber) continue;
+            if (!hasRoomForJoiner(ctx)) continue;
             if (best == null || rank(ctx) > rank(best)) best = ctx;
         }
         return best;
+    }
+
+    /**
+     * 这一局还能不能再进一个人。
+     * <p>
+     * 只看 {@code maxPlayerNumber} 不够：真正卡人的是两队各自的容量。攻守两队各 1 人时，
+     * 总人数上限配成 1 也能让第二个人无处可去——他会被判定为「对局已满」而另开一局，
+     * 而新的一局同样只装得下一个人，{@code minPlayerNumber} 于是永远凑不齐，谁都开不了局。
+     * 所以这里要求「总人数没满」且「至少一队还有空位」，与 {@link #autoAssignWithLimit} 的判定保持一致。
+     */
+    private static boolean hasRoomForJoiner(MatchContext ctx) {
+        int[] counts = teamCounts(ctx, null);
+        return MatchCapacity.hasRoomForJoiner(ctx.participants.size(), ctx.arena.maxPlayerNumber,
+                counts[0], ctx.arena.attackNumber, counts[1], ctx.arena.defendNumber);
+    }
+
+    /**
+     * 本局在册参与者按阵营计数。
+     * <p>
+     * 按 {@code ctx.participants} 而不是在线玩家列表统计：掉线但没结算的人仍然占着阵营位置，
+     * 漏算会让分边逻辑把超出容量的玩家塞进同一队。
+     */
+    private static int[] teamCounts(MatchContext ctx, @Nullable UUID skip) {
+        TeamSavedData data = TeamSavedData.get(ctx.battleLevel);
+        int attackers = 0;
+        int defenders = 0;
+        for (UUID id : ctx.participants) {
+            if (id.equals(skip)) continue;
+            TeamId team = data.getTeam(id);
+            if (team == TeamId.ATTACKERS) attackers++;
+            else if (team == TeamId.DEFENDERS) defenders++;
+        }
+        return new int[]{attackers, defenders};
     }
 
     private static int rank(MatchContext ctx) {
@@ -931,6 +965,9 @@ public final class BattlefieldGameManager {
         int now = dead.server.getTickCount();
         int delay = Math.max(0, BattlefieldServerConfig.get().deployOpenDelayTicks);
         DEPLOY_WINDOWS.put(dead.getUUID(), new DeployWindow(now + 1, now + delay + 1));
+        // 客户端一旦处于「立即重生」状态，死亡界面会被它自己收掉并直接发重生包，部署界面就没机会打开。
+        // 每次阵亡都显式把状态拨回「显示死亡界面」：死亡事件早于 CombatKill 包，这个包一定先到。
+        syncDeathScreen(dead, true);
         Battlefield.LOGGER.info("[Battlefield] {} 阵亡，{} tick 后开放部署（对局 {}）",
                 dead.getGameProfile().getName(), delay, ctx.matchId);
     }
@@ -958,6 +995,11 @@ public final class BattlefieldGameManager {
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
         MatchContext ctx = findContext(sp.getUUID());
         if (ctx == null || !ctx.entered.contains(sp.getUUID())) return;
+
+        // PlayerList#respawn 会按服务端 doImmediateRespawn 再下发一次「立即重生」游戏事件，
+        // 客户端随之把 showDeathScreen 重置——于是第二次阵亡起，客户端会自己重生掉，部署界面根本没机会打开。
+        // 每复活一次就把状态拨回「显示死亡界面」，保证下一次阵亡仍由部署界面接管。
+        syncDeathScreen(sp, true);
 
         TeamId team = TeamManager.getTeam(sp);
         if (team == TeamId.SPECTATOR) return;
@@ -1561,16 +1603,11 @@ public final class BattlefieldGameManager {
         });
     }
 
-    /** 按本局参与者的阵营计数（原实现按 battleLevel 内的实体计数，不在对局世界里的参与者会被漏掉）。 */
+    /** 按本局在册参与者的阵营计数分边：人数少的一队优先，两队都满则观战。 */
     private static TeamId autoAssignWithLimit(MatchContext ctx, ServerPlayer player) {
-        long atk = 0;
-        long def = 0;
-        for (ServerPlayer sp : participants(ctx)) {
-            if (sp == player) continue;
-            TeamId t = TeamManager.getTeam(sp);
-            if (t == TeamId.ATTACKERS) atk++;
-            else if (t == TeamId.DEFENDERS) def++;
-        }
+        int[] counts = teamCounts(ctx, player.getUUID());
+        int atk = counts[0];
+        int def = counts[1];
 
         TeamId pick;
         if (atk >= ctx.arena.attackNumber && def >= ctx.arena.defendNumber) {

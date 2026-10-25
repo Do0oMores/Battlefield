@@ -80,7 +80,15 @@ repositories {
     }
 
     maven {
+        name = "Spigot Snapshots"
         url = "https://hub.spigotmc.org/nexus/content/repositories/snapshots/"
+        // 只让这个仓库解析 spigot-api。不加这层过滤时，Gradle 会顺带用它去解析 ForgeGradle 的
+        // net.minecraft:client / forge 等依赖，一旦这台机器连不上 hub.spigotmc.org，
+        // 整个依赖图解析就抛 "Could not resolve net.minecraft:client:1.20.1"，
+        // IDEA 的 Gradle 同步随之失败，表现为全项目 import 报红（虽然命令行构建是好的）。
+        content {
+            includeGroup "org.spigotmc"
+        }
     }
 }
 
