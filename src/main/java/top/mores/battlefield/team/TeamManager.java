@@ -22,6 +22,8 @@ public final class TeamManager {
         TeamSavedData data = TeamSavedData.get(level);
         TeamId oldTeam = data.getTeam(p.getUUID());
         data.setTeam(p.getUUID(), team);
+        if (oldTeam != team && data.medical(p.getUUID()).deployed)
+            top.mores.battlefield.game.medical.MedicalPouchService.invalidate(p);
         SquadManager.onTeamChanged(p, oldTeam, team);
     }
 
@@ -29,6 +31,8 @@ public final class TeamManager {
         ServerLevel level = p.serverLevel();
         TeamId oldTeam = TeamSavedData.get(level).getTeam(p.getUUID());
         TeamSavedData.get(level).remove(p.getUUID());
+        if (TeamSavedData.get(level).medical(p.getUUID()).deployed)
+            top.mores.battlefield.game.medical.MedicalPouchService.invalidate(p);
         SquadManager.onTeamChanged(p, oldTeam, TeamId.SPECTATOR);
     }
 

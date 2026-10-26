@@ -18,7 +18,14 @@ public final class BFKeyBinds {
             CATEGORY
     );
 
+    public static final KeyMapping SELF_HEAL = new KeyMapping("key.battlefield.self_heal",
+            InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_C, CATEGORY);
+    public static final KeyMapping GIVE_MEDICAL = new KeyMapping("key.battlefield.give_medical",
+            InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_J, CATEGORY);
+
     public static void register(RegisterKeyMappingsEvent event) {
+        event.register(SELF_HEAL);
+        event.register(GIVE_MEDICAL);
         event.register(OPEN_RESPAWN_UI);
     }
 }

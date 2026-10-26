@@ -24,8 +24,14 @@ public final class C2SDeployRequest {
 
     private final String optionId;
     private final int bpSlot; // 1..9
+    private final top.mores.battlefield.game.medical.MedicalState.Role role;
 
     public C2SDeployRequest(String optionId, int bpSlot) {
+        this(optionId, bpSlot, top.mores.battlefield.game.medical.MedicalState.Role.ASSAULT);
+    }
+
+    public C2SDeployRequest(String optionId, int bpSlot, top.mores.battlefield.game.medical.MedicalState.Role role) {
+        this.role = role;
         this.optionId = optionId == null ? "" : optionId;
         this.bpSlot = bpSlot;
     }
@@ -34,10 +40,11 @@ public final class C2SDeployRequest {
         String id = msg.optionId.length() <= MAX_OPTION_ID ? msg.optionId : msg.optionId.substring(0, MAX_OPTION_ID);
         buf.writeUtf(id, MAX_OPTION_ID);
         buf.writeVarInt(msg.bpSlot);
+        buf.writeEnum(msg.role);
     }
 
     public static C2SDeployRequest decode(FriendlyByteBuf buf) {
-        return new C2SDeployRequest(buf.readUtf(MAX_OPTION_ID), buf.readVarInt());
+        return new C2SDeployRequest(buf.readUtf(MAX_OPTION_ID), buf.readVarInt(), buf.readEnum(top.mores.battlefield.game.medical.MedicalState.Role.class));
     }
 
     public static void handle(C2SDeployRequest msg, Supplier<NetworkEvent.Context> ctxSup) {
@@ -47,7 +54,7 @@ public final class C2SDeployRequest {
             if (sp == null) return;
 
             BattlefieldGameManager.DeployResult result =
-                    BattlefieldGameManager.deploy(sp, msg.optionId, msg.bpSlot);
+                    BattlefieldGameManager.deploy(sp, msg.optionId, msg.bpSlot, msg.role);
 
             // 阵亡部署会走 PlayerList#respawn，旧 ServerPlayer 已被替换成新实例；
             // 结果包必须发给当前实例，否则连接虽然还能发（connection 是复用的），玩家引用已经过期。

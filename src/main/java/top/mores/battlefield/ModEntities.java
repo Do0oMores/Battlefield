@@ -40,6 +40,12 @@ public final class ModEntities {
                             .build(Battlefield.MODID + ":respawn_beacon")
             );
 
+    public static final RegistryObject<EntityType<top.mores.battlefield.server.entity.MedicalPouchEntity>> MEDICAL_POUCH =
+            ENTITIES.register("medical_pouch", () -> EntityType.Builder.<top.mores.battlefield.server.entity.MedicalPouchEntity>of(
+                    top.mores.battlefield.server.entity.MedicalPouchEntity::new, MobCategory.MISC)
+                    .sized(0.2F, 0.2F).clientTrackingRange(32).updateInterval(1).noSave()
+                    .build(Battlefield.MODID + ":medical_pouch"));
+
     public static void register(IEventBus bus) {
         ENTITIES.register(bus);
     }

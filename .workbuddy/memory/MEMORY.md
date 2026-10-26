@@ -29,10 +29,24 @@ Minecraft 1.20.1 Forge 模组（Forge 47.4.16 / Java 17 / 依赖 TACZ 1.1.8）�
 
 已修并实测通过：性能六项（sendState / 状态包降频 / 冻结传送 / 移动区域遍历 / 记分板 / 弹药上限 IO）、
 烟幕与 V1 尾迹发包、七项系统性缺陷（部署校验、跨维度存档、世界名、背包快照、计分隔离、包长约束、信标复活）、
-**100 血基线 + 脱战回血**（见下「回血底盘」）。
+**100 血基线 + 脱战回血 + 动态回血上限**（见下「回血底盘」）、**医疗包系统**（见下）。
 
 未实测：部署包校验（需客户端发包）、信标实际放置、死亡→部署复活后的 6 秒冷却（需点界面）。
-最大缺口：无兵种模型/界面、无武器配件准入、无载具、无结算战绩。
+最大缺口：无武器配件准入、无载具、无结算战绩。
+
+## 医疗包系统（2026-10-26，基线 `5e16263` + 未提交改动）
+
+四兵种（突击/医疗/支援/侦察，仅部署时选择）+ 自疗（C）+ 医疗兵投递（J）+ 全套 TACZ 输入拦截 mixin。
+README 见 `docs/医疗包系统-实现与验证.md`。要点：
+
+- **自疗不再一次加满**：14 tick 动作截止只「消耗医疗包 + 登记回血窗口」，
+  之后每 tick `healPlayer(step, false)` 补 `maxHealth / medicalHealTicks`（默认 40 tick ≈ 50 HP/s），
+  补满或到期才 `resetRegenCeiling`。窗口是 `MedicalPouchService.DRIPS`（临时 map，不落盘，按 `life` 绑命）。
+  **窗口期间不锁动作**，死亡/重部署/离局/切维度立即终止且不补上限。
+- 储备 0/1 与生效角色存在 `TeamSavedData.medical`（主世界 SavedData）；动作/装备快照/投递只在内存。
+- **`src/gameTest` 不在 `build` 里**：改 `MedicalConfig` 的 record 参数必须同步 `MedicalGameTests` 里
+  两处 `new MedicalConfig(...)`，否则只有跑 `runGameTestServer` 才会暴露。
+  GameTest 跑法：`./gradlew runGameTestServer -x downloadAssets -x downloadMCMeta` + 本机绕证书参数。
 
 ## 代码线现状（2026-10-25 已合并，单一主干）
 

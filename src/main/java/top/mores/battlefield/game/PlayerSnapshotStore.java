@@ -36,8 +36,8 @@ import java.util.UUID;
  * 数据落在主世界的 DataStorage 里，因此不像玩家当前维度那样会跨维度丢失，
  * 也能在服务器异常重启后于下次登录时补发（见 {@code onLoggedIn}）。
  * <p>
- * 掉线时只还原背包（这一步会随紧接着的玩家存档一起落盘），位置记为「待返回」，
- * 下次登录再传送——不在登出事件里做跨维度传送。
+ * 同一战局内掉线保留赛中装备与此快照；战局已结束或服务器重启后，
+ * 下次登录恢复快照并返回大厅。退出战局时仍立即还原。
  */
 public class PlayerSnapshotStore extends SavedData {
     private static final String DATA_NAME = "battlefield_player_snapshots";

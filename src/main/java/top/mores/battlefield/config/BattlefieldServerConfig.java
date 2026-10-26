@@ -43,6 +43,7 @@ public final class BattlefieldServerConfig {
             }
 
             Settings next;
+            Root parsed;
             try (Reader reader = Files.newBufferedReader(FILE)) {
                 JsonObject raw = JsonParser.parseReader(reader).getAsJsonObject();
                 // 老版本配置文件里没有新加的字段。这里按当前默认值把缺的键补回去再落盘，
@@ -52,13 +53,15 @@ public final class BattlefieldServerConfig {
                     writeJson(raw);
                     Battlefield.LOGGER.info("[Battlefield] server_config.json 补齐了 {} 个缺失字段（默认值）", added);
                 }
-                next = Settings.from(GSON.fromJson(raw, Root.class));
+                parsed = GSON.fromJson(raw, Root.class);
+                next = Settings.from(parsed);
             }
 
             if (!next.combat.fallbacks().isEmpty()) {
                 Battlefield.LOGGER.warn("[Battlefield] server_config.json 里这些战斗参数越界，已回退默认值: {}",
                         next.combat.fallbacks());
             }
+            next.medical = MedicalConfig.from(parsed);
             SETTINGS = next;
         } catch (Exception e) {
             Battlefield.LOGGER.error("[Battlefield] 加载服务端配置失败，回退默认值: {}", FILE, e);
@@ -96,6 +99,7 @@ public final class BattlefieldServerConfig {
     }
 
     public static final class Settings {
+        public MedicalConfig medical = MedicalConfig.defaults();
         public final int teamCap;
         public final int squadCap;
         public final int teamSquadCap;
@@ -326,6 +330,16 @@ public final class BattlefieldServerConfig {
      * 把「JSON 字段名 ↔ 配置对象字段」这层最容易错位的映射钉住。
      */
     static final class Root {
+        Integer medicalUseTicks = 14;
+        Integer medicalThrowCooldownTicks = 20;
+        Double medicalRange = 12.0;
+        Double medicalSpeed = 0.65;
+        Integer medicalLifetimeTicks = 40;
+        Double medicalAimDegrees = 20.0;
+        Double medicalTurnDegrees = 12.0;
+        Integer medicalHealTicks = 40;
+        String medical_comment = "医疗: 动作14tick; 成功发射冷却20tick; 距离12格; 速度0.65格/tick; 寿命40tick; 瞄准半角20度; 每tick转向最多12度; 回血40tick（逐步补满，不是一次加满）。越界回退默认值。";
+
         String _comment = "Battlefield 服务端热重载配置。执行 /bt reload 即可重新加载本文件。";
 
         Integer teamCap = 16;

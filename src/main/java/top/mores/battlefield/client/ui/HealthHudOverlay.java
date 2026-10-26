@@ -19,7 +19,7 @@ import top.mores.battlefield.config.BattlefieldServerConfig;
  * 对局内的血条。
  * <p>
  * 100 血不能继续用原版心形：20 血 = 10 颗心，100 血就是 50 颗心，铺满两行屏宽还读不出精确值。
- * 所以这里直接画一根横条 + {@code 87/100} 的数字，并且把原版的 {@code PLAYER_HEALTH} 与
+ * 所以这里直接画一根横条 + 一个当前血量数字（如 {@code 87}），并且把原版的 {@code PLAYER_HEALTH} 与
  * {@code FOOD_LEVEL} 覆盖层取消掉 —— 饥饿值在对局里被钉死在 17（见 {@code keepPlayerFed}），
  * 画出来只会让人以为要吃食物。
  * <p>
@@ -69,7 +69,7 @@ public final class HealthHudOverlay {
             resetDisplay();
             return;
         }
-        if (player.isCreative() || player.isSpectator()) return;
+        if (player.isCreative() || player.isSpectator() || !player.isAlive()) return;
 
         float maxHealth = player.getMaxHealth();
         if (maxHealth <= 0.0F) return;
@@ -78,7 +78,11 @@ public final class HealthHudOverlay {
         float shown = smoothHealth(health, maxHealth);
         float recoverable = Mth.clamp(maxHealth * regenCapFraction(), shown, maxHealth);
 
-        int barX = (screenWidth - BAR_WIDTH) / 2;
+        // 宽度仍按「满血时的数字」预留：数字只显示当前血量后，9→10→100 位数会变，
+        // 按实时宽度排版会让整组（血条 + 数字 + 医疗十字 + 储备）左右抖动
+        int labelWidth = mc.font.width(Integer.toString(Math.round(maxHealth)));
+        int groupWidth = BAR_WIDTH + LABEL_GAP + labelWidth + 29;
+        int barX = Math.max(2, (screenWidth - groupWidth) / 2);
         int barY = screenHeight - BAR_ROW_OFFSET;
         int barRight = barX + BAR_WIDTH;
 
@@ -94,10 +98,22 @@ public final class HealthHudOverlay {
             g.fill(barX, barY, barX + healthPixels, barY + BAR_HEIGHT, COLOR_HEALTH);
         }
 
-        // 数字跟着显示值走，而不是真实值：否则会先看到 "45/100" 再看到血条爬过去
-        String label = Math.round(shown) + "/" + Math.round(maxHealth);
+        // 数字跟着显示值走，而不是真实值：否则会先看到 "45" 再看到血条爬过去
+        String label = healthLabel(shown);
         int textColor = health >= maxHealth - 0.5F ? COLOR_TEXT_HEALTHY : COLOR_TEXT;
         g.drawString(mc.font, label, barRight + LABEL_GAP, barY - 2, textColor, true);
+        if (!top.mores.battlefield.client.MedicalClient.deployed()) return;
+        int iconX = barRight + LABEL_GAP + labelWidth + 6;
+        int iconY = barY - 1;
+        // Transparent, equal-arm 7x7 medical cross, not a font '+' glyph.
+        g.fill(iconX+2,iconY,iconX+5,iconY+7,0xFFF2F2F2);
+        g.fill(iconX,iconY+2,iconX+7,iconY+5,0xFFF2F2F2);
+        if (top.mores.battlefield.client.MedicalClient.medic()) {
+            // Pixel infinity fallback, independent of the active resource-pack font.
+            String[] pixels = {"01100110","10011001","10011001","01100110"};
+            for (int row=0; row<pixels.length; row++) for (int col=0; col<8; col++)
+                if (pixels[row].charAt(col)=='1') g.fill(iconX+11+col,iconY+1+row,iconX+12+col,iconY+2+row,COLOR_TEXT);
+        } else g.drawString(mc.font,Integer.toString(top.mores.battlefield.client.MedicalClient.reserve()),iconX+11,barY-2,COLOR_TEXT,true);
     }
 
     /**
@@ -129,6 +145,17 @@ public final class HealthHudOverlay {
             displayedHealth = actual;
         }
         return displayedHealth;
+    }
+
+    /**
+     * 血条右侧的数字：<b>只显示当前血量</b>，不带 {@code /100} 后缀。
+     * <p>
+     * 满值在对局里固定是 100，写出来只是噪音；比例已经由血条长度表达，数字只负责给精确值。
+     * 抽成独立方法是为了让取整规则能被单元测试钉住（39.6 → "40"，不是 "39.6" 也不是 "39"）——
+     * 整个 HUD 只有这一处产生文字。
+     */
+    static String healthLabel(float shown) {
+        return Integer.toString(Math.round(shown));
     }
 
     private static void resetDisplay() {

@@ -15,5 +15,6 @@ public final class ClientEntityRenderers {
     @SubscribeEvent
     public static void onRegisterRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.RESPAWN_BEACON.get(), RespawnBeaconRenderer::new);
+        event.registerEntityRenderer(ModEntities.MEDICAL_POUCH.get(), MedicalPouchRenderer::new);
     }
 }

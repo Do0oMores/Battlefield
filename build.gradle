@@ -71,6 +71,8 @@ mixin {
 sourceSets.main.resources { srcDir 'src/generated/resources' }
 
 repositories {
+    // Optional local installation for compatibility validation; no vendor JARs are committed.
+    if (findProperty('taczLocalDir')) { flatDir { dirs project.property('taczLocalDir') } }
     maven {
         name = "Curse Maven"
         url = "https://www.cursemaven.com"
@@ -94,7 +96,7 @@ repositories {
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
-    implementation fg.deobf("curse.maven:timeless-and-classics-zero-1028108:7401617")
+    implementation fg.deobf(findProperty('taczCoordinate') ?: "curse.maven:timeless-and-classics-zero-1028108:7401617")
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
     compileOnly "org.spigotmc:spigot-api:1.20.1-R0.1-SNAPSHOT"
 
@@ -142,4 +144,18 @@ tasks.named('jar', Jar).configure {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+
+// Runtime integration tests are isolated from the release JAR and the developer's normal run directory.
+sourceSets {
+    gameTest {
+        compileClasspath += sourceSets.main.output + sourceSets.main.compileClasspath
+        runtimeClasspath += sourceSets.main.output + sourceSets.main.runtimeClasspath
+    }
+}
+minecraft.runs.gameTestServer {
+    workingDirectory project.file('build/medical-gametest-run')
+    property 'forge.enabledGameTestNamespaces', mod_id
+    mods { "${mod_id}" { source sourceSets.gameTest } }
 }

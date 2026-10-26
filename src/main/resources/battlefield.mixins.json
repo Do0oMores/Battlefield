@@ -2,11 +2,21 @@
   "required": true,
   "minVersion": "0.8",
   "package": "top.mores.battlefield.mixin",
-  "compatibilityLevel": "JAVA_8",
+  "compatibilityLevel": "JAVA_17",
   "refmap": "battlefield.refmap.json",
   "mixins": [
+    "TaczMedicalShootMixin",
+    "TaczMedicalReloadMixin",
+    "TaczMedicalMeleeMixin",
+    "TaczMedicalAimMixin",
+    "MedicalDamageMixin",
+    "TaczMedicalScriptMixin"
   ],
   "client": [
+    "TaczMedicalClientShootMixin",
+    "TaczMedicalClientReloadMixin",
+    "TaczMedicalClientMeleeMixin",
+    "TaczMedicalClientAimMixin"
   ],
   "injectors": {
     "defaultRequire": 1

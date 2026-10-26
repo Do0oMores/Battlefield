@@ -57,6 +57,8 @@ public class RedeployScreen extends Screen {
 
     private String selectedId = "";
     private int backpackSlot;
+    private top.mores.battlefield.game.medical.MedicalState.Role selectedRole =
+            top.mores.battlefield.game.medical.MedicalState.Role.ASSAULT;
     private int listScroll;
     private String requestedMapId = "";
 
@@ -480,8 +482,8 @@ public class RedeployScreen extends Screen {
         int x = rightPanel.x1() + 8;
         int y = rightPanel.y1() + 22;
         g.drawString(font, "兵种", x, y, DeployTheme.TEXT_DIM, false);
-        g.drawString(font, "未实装", x + 34, y, DeployTheme.TEXT_MUTED, false);
-        DeployTheme.chip(g, font, "保留", x + 70, y - 2, DeployTheme.TEXT_DIM);
+        String roleName = net.minecraft.client.resources.language.I18n.get("role.battlefield." + selectedRole.name().toLowerCase(java.util.Locale.ROOT));
+        g.drawString(font, "< " + roleName + " >", x + 34, y, DeployTheme.ACCENT, false);
 
         int lineY = rightPanel.y1() + 38;
         g.fill(rightPanel.x1() + 8, lineY, rightPanel.x2() - 8, lineY + 1, DeployTheme.BORDER);
@@ -654,6 +656,12 @@ public class RedeployScreen extends Screen {
         int mx = (int) mouseX;
         int my = (int) mouseY;
 
+        if (mx >= rightPanel.x1() + 34 && mx < rightPanel.x2() - 8
+                && my >= rightPanel.y1() + 19 && my <= rightPanel.y1() + 34 && !sending) {
+            var roles = top.mores.battlefield.game.medical.MedicalState.Role.values();
+            selectedRole = roles[(selectedRole.ordinal() + 1) % roles.length];
+            return true;
+        }
         if (deployBtn.contains(mx, my)) {
             pressedButton = "deploy";
             tryDeploy();
@@ -764,7 +772,7 @@ public class RedeployScreen extends Screen {
         sending = true;
         sendingTicks = 0;
         DeployClientState.optionId(selectedId);
-        BattlefieldNet.sendToServer(new C2SDeployRequest(selectedId, backpackSlot));
+        BattlefieldNet.sendToServer(new C2SDeployRequest(selectedId, backpackSlot, selectedRole));
     }
 
     private void attemptClose() {

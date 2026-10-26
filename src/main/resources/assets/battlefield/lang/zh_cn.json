@@ -3,5 +3,12 @@
   "block.battlefield.medical_supply_crate": "医疗箱",
   "block.battlefield.v1_missile": "V1导弹",
   "key.categories.battlefield": "Battlefield",
-  "key.battlefield.ammo_station_interact": "AmmoBox"
+  "key.battlefield.ammo_station_interact": "AmmoBox",
+  "key.battlefield.self_heal": "使用医疗包（默认 C，与 TACZ 匍匐冲突）",
+  "key.battlefield.give_medical": "分发医疗包",
+  "message.battlefield.medical_key_conflict": "医疗包按键与「%s」冲突，请在控制设置中重新绑定其中一个功能。",
+  "role.battlefield.assault": "突击兵",
+  "role.battlefield.medic": "医疗兵",
+  "role.battlefield.support": "支援兵",
+  "role.battlefield.recon": "侦察兵"
 }

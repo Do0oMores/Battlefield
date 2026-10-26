@@ -45,6 +45,8 @@ import top.mores.battlefield.deploy.DeploymentTarget;
 import top.mores.battlefield.deploy.map.BakedDeployMap;
 import top.mores.battlefield.deploy.map.DeployMapService;
 import top.mores.battlefield.game.combat.CombatRegenService;
+import top.mores.battlefield.game.medical.MedicalState;
+import top.mores.battlefield.game.medical.MedicalPouchService;
 import top.mores.battlefield.game.combat.PlayerHealthService;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.S2CDeployDataPacket;
@@ -218,7 +220,7 @@ public final class BattlefieldGameManager {
                                   CompletableFuture<ArenaTemplate> template) {
     }
 
-    private record PendingDeploy(String optionId, int backpackSlot) {
+    private record PendingDeploy(String optionId, int backpackSlot, MedicalState.Role role) {
     }
 
     private record DeployWindow(int openAt, int readyAt) {
@@ -457,6 +459,9 @@ public final class BattlefieldGameManager {
             enterMatchWorld(ctx, player, ctx.spawnOf(team));
         }
         setRespawnToTeamSpawn(ctx, player, team);
+        if (ctx.phase != Phase.WAITING && team != TeamId.SPECTATOR) {
+            MedicalPouchService.deployed(player, MedicalState.Role.ASSAULT);
+        }
         // 进场先补满一次：周期维持是 3 秒一次，不该让新进场的玩家带着饥饿条等那一刻。
         keepPlayerFed(player);
 
@@ -513,6 +518,7 @@ public final class BattlefieldGameManager {
         if (ctx == null) {
             PLAYER_MATCH.remove(player.getUUID());
             // 上一局异常中断时可能把 100 血的上限留在身上，这里顺手清掉
+            MedicalPouchService.invalidate(player);
             PlayerHealthService.remove(player);
             CombatRegenService.onLeave(player.getUUID());
             sendClientReset(player);
@@ -546,6 +552,7 @@ public final class BattlefieldGameManager {
      */
     private static void removeParticipant(MatchContext ctx, ServerPlayer player, boolean loggingOut) {
         UUID id = player.getUUID();
+        MedicalPouchService.invalidate(player);
         sendClientReset(player);
         BombardmentManager.stop(player);
         RespawnBeaconManager.removeOwnerBeacon(player.server, id);
@@ -757,6 +764,11 @@ public final class BattlefieldGameManager {
      * @param backpackSlot 1..9 配装预设槽位
      */
     public static DeployResult deploy(ServerPlayer player, String optionId, int backpackSlot) {
+        return deploy(player, optionId, backpackSlot, MedicalState.Role.ASSAULT);
+    }
+
+    public static DeployResult deploy(ServerPlayer player, String optionId, int backpackSlot, MedicalState.Role role) {
+        if (role == null) return DeployResult.fail("无效兵种。");
         if (backpackSlot < 1 || backpackSlot > 9) {
             return DeployResult.fail("无效的配装槽位。");
         }
@@ -811,7 +823,7 @@ public final class BattlefieldGameManager {
         // 因此这里的事件、维度切换、背包处理与玩家手点死亡界面完全一致；
         // 真正的落点由 onPlayerRespawn 按那一刻的状态再解析一次。
         if (!player.isAlive()) {
-            PENDING_DEPLOY.put(player.getUUID(), new PendingDeploy(optionId, backpackSlot));
+            PENDING_DEPLOY.put(player.getUUID(), new PendingDeploy(optionId, backpackSlot, role));
             try {
                 player.server.getPlayerList().respawn(player, false);
             } catch (Throwable t) {
@@ -828,6 +840,7 @@ public final class BattlefieldGameManager {
                 BlockPos.containing(target.x(), target.y(), target.z()), target.yaw(), true, false);
 
         BackpackBridge.applyBackpackPreset(player, backpackSlot);
+        MedicalPouchService.deployed(player, role);
         return DeployResult.OK;
     }
 
@@ -848,14 +861,20 @@ public final class BattlefieldGameManager {
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
         MatchContext ctx = findContext(sp.getUUID());
         if (ctx == null) return;
-        removeParticipant(ctx, sp, true);
-        afterParticipantLeft(ctx);
+        // A disconnected player keeps the same match, equipment snapshot, life and reserve.
+        // SavedData persists stock; playerdata persists the actual inventory/health/position.
+        // Match contexts still expire normally and never survive a server restart.
+        MedicalPouchService.cancel(sp);
+        PENDING_DEPLOY.remove(sp.getUUID());
+        DEPLOY_REQUEST_TICK.remove(sp.getUUID());
+        BombardmentManager.stop(sp);
     }
 
     /**
      * 登录时处理上一次留下的状态：
      * <ul>
-     *   <li>掉线：背包已在登出时还原，这里把人从战场维度送回进场前的位置；</li>
+     *   <li>同一服务器内战局仍在：恢复同一次部署的装备、储备与生命，不重新初始化；</li>
+     *   <li>离线期间战局已结束：还原赛前快照并返回大厅；</li>
      *   <li>崩服：快照还在、背包还是对局里的，这里一并还原；</li>
      *   <li>残留阵营（对局不会跨重启存活）一律清掉。</li>
      * </ul>
@@ -864,7 +883,22 @@ public final class BattlefieldGameManager {
     public static void onLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (!Battlefield.isEnabled()) return;
         if (!(event.getEntity() instanceof ServerPlayer sp)) return;
-        if (PLAYER_MATCH.containsKey(sp.getUUID())) return;
+        MatchContext resumed = findContext(sp.getUUID());
+        if (resumed != null && resumed.entered.contains(sp.getUUID())) {
+            MedicalPouchService.cancel(sp);
+            if (resumed.phase == Phase.RUNNING && MedicalPouchService.state(sp).match.isEmpty()
+                    && sp.isAlive() && TeamManager.getTeam(sp) != TeamId.SPECTATOR) {
+                teleportInMatch(resumed, sp, resumed.spawnOf(TeamManager.getTeam(sp)));
+                MedicalPouchService.deployed(sp, MedicalState.Role.ASSAULT);
+            }
+            PlayerHealthService.apply(sp);
+            syncDeathScreen(sp, true);
+            MedicalPouchService.sync(sp);
+            sendState(resumed);
+            if (!sp.isAlive()) requestDeploymentData(sp);
+            return;
+        }
+        MedicalPouchService.invalidate(sp);
 
         // 崩服 / 强杀进程后，100 血的上限可能还挂在玩家身上；这里先还原回原版上限，
         // 否则下一局开局就带着一局残留的属性修饰器
@@ -884,6 +918,7 @@ public final class BattlefieldGameManager {
     @SubscribeEvent
     public static void onServerStarted(ServerStartedEvent event) {
         MinecraftServer server = event.getServer();
+        TeamSavedData.get(server.overworld()).clearMedical();
         int stale = TeamManager.clearAllStale(server.overworld());
         if (stale > 0) {
             Battlefield.LOGGER.info("[Battlefield] 清理了 {} 条残留阵营记录", stale);
@@ -1060,6 +1095,7 @@ public final class BattlefieldGameManager {
                         BlockPos.containing(target.x(), target.y(), target.z()), target.yaw(), true, false);
                 // 装备来源就是部署配装：死亡掉落已被拦截，这里把选中的预设重新装上
                 BackpackBridge.applyBackpackPreset(sp, pending.backpackSlot());
+                MedicalPouchService.deployed(sp, pending.role());
                 sp.displayClientMessage(Component.literal("已部署至 " + target.option().name())
                         .withStyle(ChatFormatting.GREEN), true);
                 return;
@@ -1071,12 +1107,14 @@ public final class BattlefieldGameManager {
         // ② 其次在小队复活信标处重生（离死亡点最近且可站立的那个）
         if (BeaconRespawnLogic.tryAutoRespawn(sp)) {
             if (pending != null) BackpackBridge.applyBackpackPreset(sp, pending.backpackSlot());
+            MedicalPouchService.deployed(sp, pending == null ? MedicalPouchService.state(sp).role : pending.role());
             return;
         }
 
         // ③ 没有信标 / 信标被摧毁 / 被方块堵住 → 回落到队伍主出生点
         teleportInMatch(ctx, sp, ctx.spawnOf(team));
         if (pending != null) BackpackBridge.applyBackpackPreset(sp, pending.backpackSlot());
+        MedicalPouchService.deployed(sp, pending == null ? MedicalPouchService.state(sp).role : pending.role());
     }
 
     @SubscribeEvent
@@ -1452,6 +1490,7 @@ public final class BattlefieldGameManager {
             TeamId team = TeamManager.getTeam(sp);
             enterMatchWorld(ctx, sp, ctx.spawnOf(team));
             setRespawnToTeamSpawn(ctx, sp, team);
+            if (team != TeamId.SPECTATOR) MedicalPouchService.deployed(sp, MedicalState.Role.ASSAULT);
         });
     }
 
@@ -1459,6 +1498,7 @@ public final class BattlefieldGameManager {
         ctx.phase = Phase.RUNNING;
         ctx.pendingEndWinner = null;
         ctx.frozenAnchors.clear();
+        forEachParticipant(ctx, MedicalPouchService::sync);
     }
 
     private static void startEnding(MatchContext ctx, TeamId winner) {
@@ -1468,6 +1508,7 @@ public final class BattlefieldGameManager {
         ctx.frozenAnchors.clear();
 
         forEachEntered(ctx, sp -> {
+            MedicalPouchService.invalidate(sp);
             sp.getInventory().clearContent();
             sp.setGameMode(GameType.ADVENTURE);
             sp.setDeltaMovement(0, 0, 0);
@@ -1821,6 +1862,13 @@ public final class BattlefieldGameManager {
         MatchContext ctx = findContext(attacker.getUUID());
         return ctx != null && ctx.phase == Phase.RUNNING
                 && ctx.entered.contains(attacker.getUUID()) && ctx.entered.contains(victim.getUUID());
+    }
+
+    public static boolean isMedicalDeploymentValid(ServerPlayer player) {
+        MatchContext ctx = findContext(player.getUUID());
+        return ctx != null && ctx.phase == Phase.RUNNING && ctx.entered.contains(player.getUUID())
+                && !DEPLOY_WINDOWS.containsKey(player.getUUID()) && !PENDING_DEPLOY.containsKey(player.getUUID())
+                && player.serverLevel() == ctx.battleLevel && TeamManager.getTeam(player) != TeamId.SPECTATOR;
     }
 
     public static boolean isEnteredParticipant(ServerPlayer player) {

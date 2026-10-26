@@ -26,7 +26,8 @@ public final class BattlefieldNet {
     // 4：部署界面重做——S2COpenDeployScreenPacket 换成带数据的 S2CDeployDataPacket，
     //    C2SDeployRequest 的 spawnIndex(int) 换成 optionId(utf)，并新增请求/结果两个包，消息表整体变化
     // 5：部署界面加战区底图（S2CDeployMapPacket / C2SRequestDeployMap），S2CDeployDataPacket 多一个 mapId 字段
-    private static final String PROTOCOL = "5";
+    // 6: 部署请求增加生效兵种；医疗意图与状态包仅追加到旧消息表末尾。
+    private static final String PROTOCOL = "6"; // medical state + effective deployment role
     public static final SimpleChannel CH = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Battlefield.MODID, "main"),
             () -> PROTOCOL, PROTOCOL::equals, PROTOCOL::equals
@@ -174,6 +175,10 @@ public final class BattlefieldNet {
                 S2CSquadPanelPacket::decode,
                 S2CSquadPanelPacket::handle
         );
+        CH.registerMessage(id++, C2SMedicalRequest.class, C2SMedicalRequest::encode, C2SMedicalRequest::decode,
+                C2SMedicalRequest::handle, java.util.Optional.of(net.minecraftforge.network.NetworkDirection.PLAY_TO_SERVER));
+        CH.registerMessage(id++, S2CMedicalState.class, S2CMedicalState::encode, S2CMedicalState::decode,
+                S2CMedicalState::handle, java.util.Optional.of(net.minecraftforge.network.NetworkDirection.PLAY_TO_CLIENT));
     }
 
     public static void sendToPlayer(ServerPlayer sp, Object pkt) {
