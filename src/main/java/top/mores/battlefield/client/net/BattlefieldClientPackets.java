@@ -64,7 +64,7 @@ public final class BattlefieldClientPackets {
     public static void handleDeployResult(S2CDeployResultPacket msg) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.screen instanceof RedeployScreen screen) {
-            screen.onDeployResult(msg.ok(), msg.message());
+            screen.onDeployResult(msg.requestId(), msg.ok(), msg.message());
         }
     }
 
@@ -135,7 +135,7 @@ public final class BattlefieldClientPackets {
     }
 
     public static void handleBackpackPreview(S2CBackpackPreview msg) {
-        Minecraft.getInstance().execute(() -> DeployPreviewClientState.putPreview(msg.bpSlot(), msg.items()));
+        Minecraft.getInstance().execute(() -> DeployPreviewClientState.putPreview(msg.soldierClass(), msg.items(), msg.status()));
     }
 
     public static void handleSquadPanel(S2CSquadPanelPacket msg) {

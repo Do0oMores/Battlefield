@@ -27,7 +27,7 @@ public final class BattlefieldNet {
     //    C2SDeployRequest 的 spawnIndex(int) 换成 optionId(utf)，并新增请求/结果两个包，消息表整体变化
     // 5：部署界面加战区底图（S2CDeployMapPacket / C2SRequestDeployMap），S2CDeployDataPacket 多一个 mapId 字段
     // 6: 部署请求增加生效兵种；医疗意图与状态包仅追加到旧消息表末尾。
-    private static final String PROTOCOL = "6"; // medical state + effective deployment role
+    private static final String PROTOCOL = "7"; // four-class loadout, UUID deployment identity, bounded preview; incompatible with numbered backpacks
     public static final SimpleChannel CH = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Battlefield.MODID, "main"),
             () -> PROTOCOL, PROTOCOL::equals, PROTOCOL::equals

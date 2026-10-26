@@ -1,0 +1,13 @@
+# sight_552 为对应默认包真实资源；安装前仍检查每枪的实际 TAG/槽位与组合。
+types: [SCOPE, MUZZLE, STOCK, GRIP, LASER, EXTENDED_MAG]
+attachments:
+  battlefield:sight_552:
+    provider-id: tacz:sight_552
+    display-name: 全息瞄准镜
+    type: SCOPE
+    enabled: true
+    unlock:
+      default-unlocked: true
+      permission: ''
+    allow-weapons: [battlefield:ak47, battlefield:ump45, battlefield:m249, battlefield:awp]
+    allow-tags: []
