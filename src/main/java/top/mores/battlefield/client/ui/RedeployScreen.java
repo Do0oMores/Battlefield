@@ -56,9 +56,8 @@ public class RedeployScreen extends Screen {
     private final DeployMapView map = new DeployMapView();
 
     private String selectedId = "";
-    private int backpackSlot;
-    private top.mores.battlefield.game.medical.MedicalState.Role selectedRole =
-            top.mores.battlefield.game.medical.MedicalState.Role.ASSAULT;
+    private top.mores.battlefield.protocol.SoldierClass selectedRole =
+            top.mores.battlefield.protocol.SoldierClass.ASSAULT;
     private int listScroll;
     private String requestedMapId = "";
 
@@ -66,6 +65,8 @@ public class RedeployScreen extends Screen {
     private int noticeColor = DeployTheme.WARN;
     private int noticeTicks;
 
+    private java.util.UUID deploymentRequestId = java.util.UUID.randomUUID();
+    private String requestChoice = "";
     private boolean sending;
     private int sendingTicks;
     private int refreshTicks;
@@ -90,7 +91,7 @@ public class RedeployScreen extends Screen {
         super(Component.literal("重新部署"));
         this.data = initial == null ? DeploymentData.CLOSED : initial;
         this.header = DeployHeaderModel.build(this.data);
-        this.backpackSlot = DeployClientState.backpackSlot();
+        this.selectedRole = DeployClientState.soldierClass();
         this.selectedId = DeployClientState.optionId();
     }
 
@@ -194,7 +195,9 @@ public class RedeployScreen extends Screen {
         requestedMapId = "";
     }
 
-    public void onDeployResult(boolean ok, String message) {
+    public void onDeployResult(java.util.UUID requestId, boolean ok, String message) {
+        if (!deploymentRequestId.equals(requestId)) return;
+        requestChoice = "";
         sending = false;
         if (ok) {
             onClose();
@@ -215,7 +218,7 @@ public class RedeployScreen extends Screen {
     }
 
     private void requestPreview() {
-        BattlefieldNet.sendToServer(new C2SRequestBackpackPreview(backpackSlot));
+        BattlefieldNet.sendToServer(new C2SRequestBackpackPreview(selectedRole));
     }
 
     /**
@@ -493,29 +496,29 @@ public class RedeployScreen extends Screen {
                 DeployTheme.ACCENT, true, bpPrev.contains(mouseX, mouseY), pressedButton.equals("bpPrev"));
         DeployTheme.button(g, font, bpNext.x1(), bpNext.y1(), bpNext.x2(), bpNext.y2(), ">",
                 DeployTheme.ACCENT, true, bpNext.contains(mouseX, mouseY), pressedButton.equals("bpNext"));
-        String slotLabel = "背包 " + backpackSlot;
+        String slotLabel = "当前兵种配装";
         g.drawString(font, slotLabel,
                 (bpPrev.x2() + bpNext.x1()) / 2 - font.width(slotLabel) / 2,
                 bpPrev.y1() + 2, DeployTheme.TEXT, false);
 
         renderItemGrid(g, mouseX, mouseY);
 
-        boolean hasPreview = !DeployPreviewClientState.getPreview(backpackSlot).isEmpty();
+        boolean hasPreview = !DeployPreviewClientState.getPreview(selectedRole).isEmpty();
         int noteW = rightPanel.w() - 16;
         if (hasPreview) {
-            g.drawString(font, DeployTheme.trim(font, "装备来自背包预设", noteW),
+            g.drawString(font, DeployTheme.trim(font, "装备来自 BFBackpack", noteW),
                     x, rightPanel.y2() - 14, DeployTheme.TEXT_DIM, false);
         } else {
             // 两行，避免窄面板把「背包插件未响应」截掉一半
             g.drawString(font, DeployTheme.trim(font, "无配装数据", noteW),
                     x, rightPanel.y2() - 24, DeployTheme.TEXT_DIM, false);
-            g.drawString(font, DeployTheme.trim(font, "背包插件未响应", noteW),
+            g.drawString(font, DeployTheme.trim(font, DeployPreviewClientState.status(selectedRole), noteW),
                     x, rightPanel.y2() - 14, DeployTheme.TEXT_DIM, false);
         }
     }
 
     private void renderItemGrid(GuiGraphics g, int mouseX, int mouseY) {
-        List<ItemStack> preview = DeployPreviewClientState.getPreview(backpackSlot);
+        List<ItemStack> preview = DeployPreviewClientState.getPreview(selectedRole);
         int gridX = rightPanel.x1() + 8;
         int gridY = rightPanel.y1() + 80;
         int cell = SLOT + SLOT_GAP;
@@ -658,8 +661,7 @@ public class RedeployScreen extends Screen {
 
         if (mx >= rightPanel.x1() + 34 && mx < rightPanel.x2() - 8
                 && my >= rightPanel.y1() + 19 && my <= rightPanel.y1() + 34 && !sending) {
-            var roles = top.mores.battlefield.game.medical.MedicalState.Role.values();
-            selectedRole = roles[(selectedRole.ordinal() + 1) % roles.length];
+            changeBackpack(1);
             return true;
         }
         if (deployBtn.contains(mx, my)) {
@@ -769,10 +771,12 @@ public class RedeployScreen extends Screen {
             return;
         }
 
+        String choice = selectedId + "/" + selectedRole.name();
+        if (!choice.equals(requestChoice)) { deploymentRequestId = java.util.UUID.randomUUID(); requestChoice = choice; }
         sending = true;
         sendingTicks = 0;
         DeployClientState.optionId(selectedId);
-        BattlefieldNet.sendToServer(new C2SDeployRequest(selectedId, backpackSlot, selectedRole));
+        BattlefieldNet.sendToServer(new C2SDeployRequest(selectedId, selectedRole, deploymentRequestId));
     }
 
     private void attemptClose() {
@@ -786,13 +790,12 @@ public class RedeployScreen extends Screen {
     }
 
     private void changeBackpack(int delta) {
-        int next = clamp(backpackSlot + delta, 1, 9);
-        if (next == backpackSlot) return;
-        backpackSlot = next;
-        DeployClientState.backpackSlot(backpackSlot);
+        if (sending) return;
+        var classes = top.mores.battlefield.protocol.SoldierClass.values();
+        selectedRole = classes[Math.floorMod(selectedRole.ordinal() + delta, classes.length)];
+        DeployClientState.soldierClass(selectedRole);
         requestPreview();
     }
-
     private int rowAt(int mouseX, int mouseY) {
         if (!listPanel.contains(mouseX, mouseY)) return -1;
         int rowY = listPanel.y1() + 18;

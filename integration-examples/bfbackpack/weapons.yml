@@ -1,0 +1,121 @@
+# TaCZ 1.1.7-hotfix 默认枪包示例；真实服务器仍由运行时校验，非自动覆盖配置。
+# 普通装备不交给 GunItemBuilder；雪/剑仅是开发演示，不声称新增投掷物或技能。
+tags: [battlefield:assault_rifle, battlefield:smg, battlefield:lmg, battlefield:sniper, battlefield:pistol, battlefield:gadget, battlefield:grenade, battlefield:melee]
+weapons:
+  battlefield:ak47:
+    provider: TACZ_GUN
+    gun-id: tacz:ak47
+    display-name: 'ak47'
+    category: assault_rifle
+    enabled: true
+    tags: [battlefield:assault_rifle]
+    slots: [PRIMARY]
+    unlock:
+      default-unlocked: true
+      permission: ''
+    attachments:
+      enabled: true
+  battlefield:ump45:
+    provider: TACZ_GUN
+    gun-id: tacz:ump45
+    display-name: 'ump45'
+    category: smg
+    enabled: true
+    tags: [battlefield:smg]
+    slots: [PRIMARY]
+    unlock:
+      default-unlocked: true
+      permission: ''
+    attachments:
+      enabled: true
+  battlefield:m249:
+    provider: TACZ_GUN
+    gun-id: tacz:m249
+    display-name: 'm249'
+    category: lmg
+    enabled: true
+    tags: [battlefield:lmg]
+    slots: [PRIMARY]
+    unlock:
+      default-unlocked: true
+      permission: ''
+    attachments:
+      enabled: true
+  battlefield:awp:
+    provider: TACZ_GUN
+    gun-id: tacz:ai_awp
+    display-name: 'awp'
+    category: sniper
+    enabled: true
+    tags: [battlefield:sniper]
+    slots: [PRIMARY]
+    unlock:
+      default-unlocked: true
+      permission: ''
+    attachments:
+      enabled: true
+  battlefield:cz75:
+    provider: TACZ_GUN
+    gun-id: tacz:cz75
+    display-name: 'cz75'
+    category: pistol
+    enabled: true
+    tags: [battlefield:pistol]
+    slots: [SECONDARY]
+    unlock:
+      default-unlocked: true
+      permission: ''
+    attachments:
+      enabled: true
+  battlefield:ammo_station:
+    provider: BATTLEFIELD_ITEM
+    gun-id: battlefield:tacz_ammo_station
+    display-name: 'ammo_station'
+    category: gadget
+    enabled: true
+    tags: [battlefield:gadget]
+    slots: [GADGET_1]
+    unlock:
+      default-unlocked: true
+      permission: ''
+    attachments:
+      enabled: false
+  battlefield:beacon:
+    provider: BATTLEFIELD_ITEM
+    gun-id: battlefield:respawn_beacon
+    display-name: 'beacon'
+    category: gadget
+    enabled: true
+    tags: [battlefield:gadget]
+    slots: [GADGET_2]
+    unlock:
+      default-unlocked: true
+      permission: ''
+    attachments:
+      enabled: false
+  battlefield:snowball:
+    provider: MINECRAFT_ITEM
+    gun-id: minecraft:snowball
+    display-name: 'snowball'
+    category: grenade
+    enabled: true
+    tags: [battlefield:grenade]
+    slots: [GRENADE]
+    unlock:
+      default-unlocked: true
+      permission: ''
+    attachments:
+      enabled: false
+  battlefield:sword:
+    provider: MINECRAFT_ITEM
+    gun-id: minecraft:iron_sword
+    display-name: 'sword'
+    category: melee
+    enabled: true
+    tags: [battlefield:melee]
+    slots: [MELEE]
+    unlock:
+      default-unlocked: true
+      permission: ''
+    attachments:
+      enabled: false

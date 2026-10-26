@@ -53,7 +53,9 @@ import top.mores.battlefield.net.S2CDeployDataPacket;
 import top.mores.battlefield.net.S2CDeployMapPacket;
 import top.mores.battlefield.net.S2CGameStatePacket;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
-import top.mores.battlefield.server.BackpackBridge;
+import top.mores.battlefield.loadout.LoadoutCoordinator;
+import top.mores.battlefield.loadout.EquipmentApplier;
+import top.mores.battlefield.protocol.SoldierClass;
 import top.mores.battlefield.server.BattleTeleport;
 import top.mores.battlefield.server.BombardmentManager;
 import top.mores.battlefield.server.arena.*;
@@ -110,16 +112,8 @@ public final class BattlefieldGameManager {
 
     private static final Map<String, MatchContext> MATCHES = new LinkedHashMap<>();
     private static final Map<UUID, String> PLAYER_MATCH = new HashMap<>();
-    /**
-     * 已经由服务端确认、尚未消费的部署选择。
-     * <p>
-     * 存选项 id 而不是坐标：复活那一刻要用当时的状态重新解析一次——期间据点可能易主、信标可能被打掉。
-     */
-    private static final Map<UUID, PendingDeploy> PENDING_DEPLOY = new HashMap<>();
     /** 阵亡后部署界面的推送计划：{@code openAt} 打开界面，{@code readyAt} 放开部署按钮。 */
     private static final Map<UUID, DeployWindow> DEPLOY_WINDOWS = new HashMap<>();
-    /** 部署请求节流时间戳，防止连点导致重复复活/重复发放装备。 */
-    private static final Map<UUID, Integer> DEPLOY_REQUEST_TICK = new HashMap<>();
     private static final Map<UUID, PlacedAmmoStation> PLAYER_AMMO_STATIONS = new HashMap<>();
     /** 正被某局占用（含准备中）的槽位号 */
     private static final Set<Integer> SLOTS_IN_USE = new HashSet<>();
@@ -220,10 +214,7 @@ public final class BattlefieldGameManager {
                                   CompletableFuture<ArenaTemplate> template) {
     }
 
-    private record PendingDeploy(String optionId, int backpackSlot, MedicalState.Role role) {
-    }
-
-    private record DeployWindow(int openAt, int readyAt) {
+private record DeployWindow(int openAt, int readyAt) {
     }
 
     // ===================================================================================
@@ -513,6 +504,7 @@ public final class BattlefieldGameManager {
     }
 
     public static void leaveBattle(ServerPlayer player) {
+        LoadoutCoordinator.cancel(player.getUUID(), "玩家离开对局");
         String matchId = PLAYER_MATCH.get(player.getUUID());
         MatchContext ctx = matchId == null ? null : MATCHES.get(matchId);
         if (ctx == null) {
@@ -552,6 +544,7 @@ public final class BattlefieldGameManager {
      */
     private static void removeParticipant(MatchContext ctx, ServerPlayer player, boolean loggingOut) {
         UUID id = player.getUUID();
+        LoadoutCoordinator.cancel(id, "玩家离开对局");
         MedicalPouchService.invalidate(player);
         sendClientReset(player);
         BombardmentManager.stop(player);
@@ -567,9 +560,7 @@ public final class BattlefieldGameManager {
         restoreFoodAfterMatch(player);
 
         PLAYER_MATCH.remove(id);
-        PENDING_DEPLOY.remove(id);
         DEPLOY_WINDOWS.remove(id);
-        DEPLOY_REQUEST_TICK.remove(id);
         PLAYER_AMMO_STATIONS.remove(id);
         ctx.participants.remove(id);
         ctx.outsideAreaTicks.remove(id);
@@ -595,9 +586,7 @@ public final class BattlefieldGameManager {
 
         for (UUID id : ctx.participants) {
             PLAYER_MATCH.remove(id);
-            PENDING_DEPLOY.remove(id);
             DEPLOY_WINDOWS.remove(id);
-            DEPLOY_REQUEST_TICK.remove(id);
             PLAYER_AMMO_STATIONS.remove(id);
             ScoreManager.clearPlayer(id);
         }
@@ -694,7 +683,7 @@ public final class BattlefieldGameManager {
             deny = "对局尚未开始。";
         } else if (ctx.phase == Phase.ENDING) {
             deny = "对局已结束。";
-        } else if (ctx.phase == Phase.RUNNING && player.isAlive()) {
+        } else if (ctx.phase == Phase.RUNNING && player.isAlive() && !player.isSpectator()) {
             deny = "战斗中无法重新部署。";
         }
 
@@ -757,93 +746,49 @@ public final class BattlefieldGameManager {
                 base == null ? 0 : base.z());
     }
 
-    /**
-     * 处理一次重新部署。所有校验都在服务端完成，客户端只提供一个稳定标识。
-     *
-     * @param optionId     {@code base} / {@code point:A} / {@code beacon:<uuid>}
-     * @param backpackSlot 1..9 配装预设槽位
-     */
-    public static DeployResult deploy(ServerPlayer player, String optionId, int backpackSlot) {
-        return deploy(player, optionId, backpackSlot, MedicalState.Role.ASSAULT);
+    /** Immutable scope from Forge's authoritative match, team, entity and life. */
+    public record LoadoutPermit(String matchId, UUID life, TeamId team, ServerPlayer actor,
+                                String optionId, SoldierClass soldierClass) {}
+
+    public static LoadoutPermit prepareLoadout(ServerPlayer player, String optionId, SoldierClass type) {
+        if (!player.server.isSameThread() || type == null || optionId == null || optionId.isBlank()) throw new IllegalArgumentException("INVALID_INPUT");
+        DeploymentData data = buildDeploymentData(player);
+        if (!data.canDeploy()) throw new IllegalStateException(data.denyReason());
+        MatchContext ctx = findContext(player.getUUID()); TeamId team = TeamManager.getTeam(player);
+        if (ctx == null || resolveDeployTarget(player, ctx, team, optionId) == null) throw new top.mores.battlefield.protocol.BridgeFailure("DEPLOYMENT_POINT_INVALID", "所选部署点已失效");
+        return new LoadoutPermit(ctx.matchId, MedicalPouchService.state(player).life, team, player, optionId, type);
     }
 
-    public static DeployResult deploy(ServerPlayer player, String optionId, int backpackSlot, MedicalState.Role role) {
-        if (role == null) return DeployResult.fail("无效兵种。");
-        if (backpackSlot < 1 || backpackSlot > 9) {
-            return DeployResult.fail("无效的配装槽位。");
-        }
-        if (optionId == null || optionId.isBlank()) {
-            return DeployResult.fail("请先选择部署点。");
-        }
-
-        MatchContext ctx = findContext(player.getUUID());
-        if (ctx == null || !ctx.entered.contains(player.getUUID())) {
-            return DeployResult.fail("你当前不在对局中。");
-        }
-        if (ctx.phase == Phase.WAITING) {
-            return DeployResult.fail("对局尚未开始。");
-        }
-        if (ctx.phase == Phase.ENDING) {
-            return DeployResult.fail("对局已结束。");
-        }
-
-        TeamId team = TeamManager.getTeam(player);
-        if (team == TeamId.SPECTATOR) {
-            return DeployResult.fail("观战者无法部署。");
-        }
-
-        // 战斗中且仍然存活时不允许"重新部署"，否则等于一次免费回城
-        if (ctx.phase == Phase.RUNNING && player.isAlive()) {
-            return DeployResult.fail("战斗中无法重新部署。");
-        }
-
-        int now = player.server.getTickCount();
-        int wait = waitTicks(player.getUUID(), now);
-        if (wait > 0) {
-            return DeployResult.fail("阵亡等待中，剩余 " + seconds(wait) + " 秒。");
-        }
-
-        // 连点保护：两次请求至少间隔 10 tick。真正防止重复出生的是"已经复活后不再是阵亡状态"，
-        // 这里只是让连点不会打出两串日志/两次配装下发。
-        Integer last = DEPLOY_REQUEST_TICK.get(player.getUUID());
-        if (last != null && now - last < 10) {
-            return DeployResult.fail("部署请求过于频繁，请稍候。");
-        }
-
-        DeploymentTarget target = resolveDeployTarget(player, ctx, team, optionId);
-        if (target == null) {
-            return DeployResult.fail("该部署点已失效。");
-        }
-
-        DEPLOY_REQUEST_TICK.put(player.getUUID(), now);
-        DEPLOY_WINDOWS.remove(player.getUUID());
-
-        // 阵亡状态：记录选择后立刻走原版复活流程。
-        // ServerGamePacketListenerImpl 处理 PERFORM_RESPAWN 时用的也是 PlayerList#respawn，
-        // 因此这里的事件、维度切换、背包处理与玩家手点死亡界面完全一致；
-        // 真正的落点由 onPlayerRespawn 按那一刻的状态再解析一次。
-        if (!player.isAlive()) {
-            PENDING_DEPLOY.put(player.getUUID(), new PendingDeploy(optionId, backpackSlot, role));
-            try {
-                player.server.getPlayerList().respawn(player, false);
-            } catch (Throwable t) {
-                PENDING_DEPLOY.remove(player.getUUID());
-                Battlefield.LOGGER.error("[Battlefield] 玩家 {} 部署时强制复活失败",
-                        player.getGameProfile().getName(), t);
-                return DeployResult.fail("部署失败，请重试。");
-            }
-            return DeployResult.OK;
-        }
-
-        BattleTeleport.toLevel(player, ctx.battleLevel, target.x(), target.y(), target.z(), target.yaw(), 0.0f);
-        player.setRespawnPosition(ctx.battleLevel.dimension(),
-                BlockPos.containing(target.x(), target.y(), target.z()), target.yaw(), true, false);
-
-        BackpackBridge.applyBackpackPreset(player, backpackSlot);
-        MedicalPouchService.deployed(player, role);
-        return DeployResult.OK;
+    public static void checkLoadoutPermit(LoadoutPermit permit) {
+        ServerPlayer current = permit.actor().server.getPlayerList().getPlayer(permit.actor().getUUID());
+        if (current != permit.actor() || !permit.matchId().equals(PLAYER_MATCH.get(current.getUUID()))
+                || !permit.life().equals(MedicalPouchService.state(current).life) || TeamManager.getTeam(current) != permit.team()) throw new top.mores.battlefield.protocol.BridgeFailure("PLAYER_INSTANCE_INVALID", "玩家或对局代次已变更");
+        prepareLoadout(current, permit.optionId(), permit.soldierClass());
     }
 
+    /** Exactly one caller owns respawn and the all-or-rollback equipment update. */
+    public static void commitLoadout(LoadoutPermit permit, Map<Integer, net.minecraft.world.item.ItemStack> staged, EquipmentApplier applier) {
+        checkLoadoutPermit(permit); MatchContext ctx = findContext(permit.actor().getUUID()); ServerPlayer player = permit.actor();
+        DeploymentTarget target = resolveDeployTarget(player, ctx, permit.team(), permit.optionId());
+        if (target == null) throw new top.mores.battlefield.protocol.BridgeFailure("DEPLOYMENT_POINT_INVALID", "所选部署点已失效");
+        try {
+            if (!player.isAlive()) player.server.getPlayerList().respawn(player, false);
+            player = permit.actor().server.getPlayerList().getPlayer(permit.actor().getUUID());
+            if (player == null || findContext(player.getUUID()) != ctx || ctx.phase == Phase.ENDING || TeamManager.getTeam(player) != permit.team()) throw new top.mores.battlefield.protocol.BridgeFailure("PLAYER_INSTANCE_INVALID", "玩家或对局代次已变更");
+            target = resolveDeployTarget(player, ctx, TeamManager.getTeam(player), permit.optionId());
+            if (target == null) throw new top.mores.battlefield.protocol.BridgeFailure("DEPLOYMENT_POINT_INVALID", "所选部署点已失效");
+            BattleTeleport.toLevel(player, ctx.battleLevel, target.x(), target.y(), target.z(), target.yaw(), 0.0f);
+            player.setRespawnPosition(ctx.battleLevel.dimension(), BlockPos.containing(target.x(), target.y(), target.z()), target.yaw(), true, false);
+            applier.apply(player, staged); player.setGameMode(GameType.SURVIVAL);
+            DEPLOY_WINDOWS.remove(player.getUUID());
+            MedicalPouchService.deployed(player, MedicalState.Role.valueOf(permit.soldierClass().name()));
+        } catch (RuntimeException e) {
+            LoadoutCoordinator.failedCommit(permit.actor().getUUID(), e);
+            ServerPlayer live = permit.actor().server.getPlayerList().getPlayer(permit.actor().getUUID());
+            if (live != null) leaveBattle(live); // compensate with the original pre-match snapshot
+            throw e;
+        }
+    }
     @Nullable
     private static DeploymentTarget resolveDeployTarget(ServerPlayer player, MatchContext ctx, TeamId team, String optionId) {
         DeploymentRules rules = DeploymentRules.of(ctx.arena.gameMode);
@@ -864,9 +809,8 @@ public final class BattlefieldGameManager {
         // A disconnected player keeps the same match, equipment snapshot, life and reserve.
         // SavedData persists stock; playerdata persists the actual inventory/health/position.
         // Match contexts still expire normally and never survive a server restart.
+        LoadoutCoordinator.cancel(sp.getUUID(), "玩家离线");
         MedicalPouchService.cancel(sp);
-        PENDING_DEPLOY.remove(sp.getUUID());
-        DEPLOY_REQUEST_TICK.remove(sp.getUUID());
         BombardmentManager.stop(sp);
     }
 
@@ -959,9 +903,7 @@ public final class BattlefieldGameManager {
     public static void onServerStopped(ServerStoppedEvent event) {
         MATCHES.clear();
         PLAYER_MATCH.clear();
-        PENDING_DEPLOY.clear();
         DEPLOY_WINDOWS.clear();
-        DEPLOY_REQUEST_TICK.clear();
         PLAYER_AMMO_STATIONS.clear();
         SLOTS_IN_USE.clear();
         PENDING_PREWARM.clear();
@@ -1083,40 +1025,11 @@ public final class BattlefieldGameManager {
         TeamId team = TeamManager.getTeam(sp);
         if (team == TeamId.SPECTATOR) return;
 
-        // ① 部署界面确认过的位置优先（此时再按复活这一刻的状态解析一次，信标可能已被摧毁、据点可能易主）
-        PendingDeploy pending = PENDING_DEPLOY.remove(sp.getUUID());
-        Battlefield.LOGGER.info("[Battlefield] {} 触发复活事件，pending={}",
-                sp.getGameProfile().getName(), pending == null ? "无" : pending.optionId());
-        if (pending != null) {
-            DeploymentTarget target = resolveDeployTarget(sp, ctx, team, pending.optionId());
-            if (target != null) {
-                BattleTeleport.toLevel(sp, ctx.battleLevel, target.x(), target.y(), target.z(), target.yaw(), 0.0f);
-                sp.setRespawnPosition(ctx.battleLevel.dimension(),
-                        BlockPos.containing(target.x(), target.y(), target.z()), target.yaw(), true, false);
-                // 装备来源就是部署配装：死亡掉落已被拦截，这里把选中的预设重新装上
-                BackpackBridge.applyBackpackPreset(sp, pending.backpackSlot());
-                MedicalPouchService.deployed(sp, pending.role());
-                sp.displayClientMessage(Component.literal("已部署至 " + target.option().name())
-                        .withStyle(ChatFormatting.GREEN), true);
-                return;
-            }
-            sp.displayClientMessage(Component.literal("所选部署点已失效，改用默认出生点。")
-                    .withStyle(ChatFormatting.YELLOW), true);
-        }
-
-        // ② 其次在小队复活信标处重生（离死亡点最近且可站立的那个）
-        if (BeaconRespawnLogic.tryAutoRespawn(sp)) {
-            if (pending != null) BackpackBridge.applyBackpackPreset(sp, pending.backpackSlot());
-            MedicalPouchService.deployed(sp, pending == null ? MedicalPouchService.state(sp).role : pending.role());
-            return;
-        }
-
-        // ③ 没有信标 / 信标被摧毁 / 被方块堵住 → 回落到队伍主出生点
-        teleportInMatch(ctx, sp, ctx.spawnOf(team));
-        if (pending != null) BackpackBridge.applyBackpackPreset(sp, pending.backpackSlot());
-        MedicalPouchService.deployed(sp, pending == null ? MedicalPouchService.state(sp).role : pending.role());
+        if (LoadoutCoordinator.committing(sp.getUUID())) return;
+        // Native/other-mod respawns still require a freshly authorized deployment. No naked active player.
+        sp.setGameMode(GameType.SPECTATOR);
+        requestDeploymentData(sp);
     }
-
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent e) {
         if (!Battlefield.isEnabled()) return;
@@ -1502,6 +1415,7 @@ public final class BattlefieldGameManager {
     }
 
     private static void startEnding(MatchContext ctx, TeamId winner) {
+        ctx.participants.forEach(id -> LoadoutCoordinator.cancel(id, "对局结束"));
         ctx.phase = Phase.ENDING;
         ctx.winner = winner;
         ctx.endingTicks = BattlefieldServerConfig.get().gameEndingSeconds * 20;
@@ -1867,7 +1781,7 @@ public final class BattlefieldGameManager {
     public static boolean isMedicalDeploymentValid(ServerPlayer player) {
         MatchContext ctx = findContext(player.getUUID());
         return ctx != null && ctx.phase == Phase.RUNNING && ctx.entered.contains(player.getUUID())
-                && !DEPLOY_WINDOWS.containsKey(player.getUUID()) && !PENDING_DEPLOY.containsKey(player.getUUID())
+                && !DEPLOY_WINDOWS.containsKey(player.getUUID())
                 && player.serverLevel() == ctx.battleLevel && TeamManager.getTeam(player) != TeamId.SPECTATOR;
     }
 

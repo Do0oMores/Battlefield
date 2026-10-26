@@ -1,0 +1,6 @@
+name: BattlefieldBridge
+version: '1.0.0'
+main: top.mores.battlefield.bukkit.BridgeLifecycle
+api-version: '1.20'
+depend: [BFBackpack]
+description: Battlefield 与 BFBackpack API v3 的受信服务端 JSON 桥接

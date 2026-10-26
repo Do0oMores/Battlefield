@@ -29,6 +29,7 @@ public final class BtCommands {
 
     public static void register(CommandDispatcher<CommandSourceStack> d) {
         LiteralCommandNode<CommandSourceStack> root = d.register(Commands.literal("bt")
+                .then(LoadoutCommands.node())
                 .then(Commands.literal("join")
                         .executes(ctx -> join(ctx.getSource().getPlayerOrException(), null, ctx.getSource()))
                         .then(Commands.argument("arena", StringArgumentType.word())
