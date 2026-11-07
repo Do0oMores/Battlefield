@@ -51,9 +51,9 @@ public final class DeployTheme {
 
     public static String stateLabel(DeploymentOption.State state) {
         return switch (state) {
-            case AVAILABLE -> "可部署";
-            case CONTESTED -> "交战中";
-            case UNAVAILABLE -> "不可用";
+            case AVAILABLE -> DeployText.tr("available");
+            case CONTESTED -> DeployText.tr("contested");
+            case UNAVAILABLE -> DeployText.tr("unavailable");
         };
     }
 

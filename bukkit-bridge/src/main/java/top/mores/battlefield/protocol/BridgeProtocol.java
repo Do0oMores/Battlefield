@@ -7,7 +7,7 @@ import java.util.*;
 
 /** Strict bounded JSON. No polymorphic/deserializable Java type names are accepted. */
 public final class BridgeProtocol {
-    public static final int API = 3, BACKEND_PROTOCOL = 2, VERSION = 1;
+    public static final int API = 3, BACKEND_PROTOCOL = 2, VERSION = 2;
     public static final int MAX_JSON = 131072, MAX_DEPTH = 24, MAX_STRING = 2048, MAX_ENTRIES = 512;
     public static final Gson JSON = new Gson();
     private BridgeProtocol() {}

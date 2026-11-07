@@ -8,10 +8,11 @@ import static top.mores.battlefield.protocol.BridgeProtocol.*;
 
 class BridgeProtocolTest {
     @Test void abiAndWireVersionsAreCheckedWithoutIntegerTruncation() {
-        requireVersions(3,2,1);
-        assertThrows(IllegalArgumentException.class,()->requireVersions(4,2,1));
-        assertThrows(IllegalArgumentException.class,()->requireVersions(3,1,1));
-        assertThrows(IllegalArgumentException.class,()->requireVersions(3L+(1L<<32),2,1));
+        requireVersions(3,2,VERSION);
+        assertThrows(IllegalArgumentException.class,()->requireVersions(3,2,1));
+        assertThrows(IllegalArgumentException.class,()->requireVersions(4,2,VERSION));
+        assertThrows(IllegalArgumentException.class,()->requireVersions(3,1,VERSION));
+        assertThrows(IllegalArgumentException.class,()->requireVersions(3L+(1L<<32),2,VERSION));
     }
     final UUID player = UUID.randomUUID();
     JsonObject deployment() {

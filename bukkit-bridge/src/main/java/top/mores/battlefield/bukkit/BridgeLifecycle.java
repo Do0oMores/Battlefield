@@ -85,6 +85,8 @@ public final class BridgeLifecycle extends JavaPlugin implements Listener {
                 case "deployment" -> task = backend.getDeploymentLoadout(player, BackpackType.valueOf(text(input, "soldierClass")));
                 case "loadout" -> task = backend.getLoadout(player, BackpackType.valueOf(text(input, "soldierClass")));
                 case "catalog" -> task = backend.getCatalog(player, BackpackType.valueOf(text(input, "soldierClass")));
+                case "validateLoadout" -> task = backend.validateLoadout(player, BackpackType.valueOf(text(input, "soldierClass")));
+                case "armoryCatalog" -> task = ArmoryCatalog.read(backend, player, BackpackType.valueOf(text(input, "soldierClass")));
                 case "attachments" -> task = backend.getAttachmentCatalog(player, id(text(input, "weaponId")));
                 case "customization" -> task = backend.getWeaponCustomization(player, id(text(input, "weaponId")));
                 case "selectEquipment" -> task = backend.selectEquipment(player, BackpackType.valueOf(text(input, "soldierClass")), LoadoutSlot.valueOf(text(input, "slot")), id(text(input, "itemId")), number(input, "revision"));

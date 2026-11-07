@@ -26,15 +26,18 @@ public final class LoadoutCoordinator implements AutoCloseable {
     private final EquipmentFactory factory;
     private final TaczResourceValidator resources;
     private final BFBackpackServiceBridge bridge;
+    private final ArmoryService armory;
     private final DeploymentLedger ledger = new DeploymentLedger();
     private final Set<DeploymentLedger.Attempt> started = new HashSet<>();
     private final Set<UUID> committing = new HashSet<>();
     private LoadoutCoordinator(MinecraftServer server) {
         this.server = server; settings = DeploymentSettings.load(); factory = new EquipmentFactory(settings);
         resources = new TaczResourceValidator(server, factory); resources.refresh(); bridge = new BFBackpackServiceBridge(resources::validate); bridge.probe();
+        armory = new ArmoryService(bridge, resources, player -> started.stream().anyMatch(attempt -> attempt.player.equals(player)));
     }
     public static LoadoutCoordinator get() { return instance; }
     public String health() { return bridge.health() + "; tacz=" + resources.ready() + "; resourceGeneration=" + resources.generation(); }
+    public ArmoryService armory() { return armory; }
     public BFBackpackServiceBridge bridge() { return bridge; }
     public static boolean committing(UUID player) { return instance != null && instance.committing.contains(player); }
     public static void cancel(UUID player, String reason) { if (instance != null) instance.ledger.forget(player, reason); }
@@ -55,6 +58,7 @@ public final class LoadoutCoordinator implements AutoCloseable {
         try {
             var prior = ledger.find(player.getUUID(), request, option + "/" + type.name());
             if (prior != null) return prior.result;
+            if (armory.saving(player.getUUID())) throw new BridgeFailure("VALIDATION_BUSY", "Armory save in progress");
             permit = BattlefieldGameManager.prepareLoadout(player, option, type);
             attempt = ledger.begin(player.getUUID(), request, permit.matchId(), permit.life(), option + "/" + type.name());
         } catch (RuntimeException e) { return CompletableFuture.completedFuture(DeploymentLedger.Outcome.fail(e instanceof BridgeFailure typed ? typed.code() : "DEPLOYMENT_DENIED", e.getMessage())); }

@@ -48,33 +48,35 @@ public final class DeployHeaderModel {
     }
 
     public static DeployHeaderModel build(DeploymentData data) {
-        String mode = data.modeName() == null || data.modeName().isBlank() ? "未知模式" : data.modeName();
-        String map = data.mapName() == null || data.mapName().isBlank() ? "地图未提供" : data.mapName();
+        String mode = "breakthrough".equals(data.modeId()) ? DeployText.tr("breakthrough")
+                : data.modeName() == null || data.modeName().isBlank() ? DeployText.tr("unknown_mode") : data.modeName();
+        String map = data.mapName() == null || data.mapName().isBlank() ? DeployText.tr("unknown_map") : data.mapName();
         String sector = data.sectorLabel() == null ? "" : data.sectorLabel();
+        if (sector.startsWith("战线 ")) sector = DeployText.tr("sector", sector.substring(3));
 
         List<Stat> stats = new ArrayList<>();
         if ("breakthrough".equals(data.modeId())) {
             // 突破：守方兵力无限（当前规则），不再显示一个恒为 0 的数字
-            stats.add(new Stat("攻方兵力", String.valueOf(ClientGameState.attackerTickets), DeployTheme.ATTACKER));
-            stats.add(new Stat("守方兵力", "∞", DeployTheme.DEFENDER));
-            stats.add(new Stat("阶段", phaseLabel(), DeployTheme.TEXT));
-            stats.add(new Stat("剩余", timeLabel(), DeployTheme.TEXT));
+            stats.add(new Stat(DeployText.tr("attacker_tickets"), String.valueOf(ClientGameState.attackerTickets), DeployTheme.ATTACKER));
+            stats.add(new Stat(DeployText.tr("defender_tickets"), "∞", DeployTheme.DEFENDER));
+            stats.add(new Stat(DeployText.tr("phase"), phaseLabel(), DeployTheme.TEXT));
+            stats.add(new Stat(DeployText.tr("remaining"), timeLabel(), DeployTheme.TEXT));
         } else {
             // 未实现的模式不编造计分方式
-            stats.add(new Stat("战局", ClientGameState.inBattle ? "进行中" : "未加入", DeployTheme.TEXT));
-            stats.add(new Stat("阶段", phaseLabel(), DeployTheme.TEXT_MUTED));
-            stats.add(new Stat("剩余", timeLabel(), DeployTheme.TEXT_MUTED));
+            stats.add(new Stat(DeployText.tr("match"), ClientGameState.inBattle ? DeployText.tr("phase.running") : DeployText.tr("phase.absent"), DeployTheme.TEXT));
+            stats.add(new Stat(DeployText.tr("phase"), phaseLabel(), DeployTheme.TEXT_MUTED));
+            stats.add(new Stat(DeployText.tr("remaining"), timeLabel(), DeployTheme.TEXT_MUTED));
         }
         return new DeployHeaderModel(mode, map, sector, stats);
     }
 
     private static String phaseLabel() {
         return switch (ClientGameState.phase) {
-            case 0 -> "等待开始";
-            case 1 -> "准备阶段";
-            case 2 -> "进行中";
-            case 3 -> "结算中";
-            default -> "未知";
+            case 0 -> DeployText.tr("phase.waiting");
+            case 1 -> DeployText.tr("phase.countdown");
+            case 2 -> DeployText.tr("phase.running");
+            case 3 -> DeployText.tr("phase.ending");
+            default -> DeployText.tr("phase.unknown");
         };
     }
 

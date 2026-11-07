@@ -641,7 +641,7 @@ private record DeployWindow(int openAt, int readyAt) {
         sendDeploymentData(player, canOpenDeployScreen(player));
     }
 
-    private static boolean canOpenDeployScreen(ServerPlayer player) {
+    public static boolean canOpenDeployScreen(ServerPlayer player) {
         MatchContext ctx = findContext(player.getUUID());
         if (ctx == null || !ctx.entered.contains(player.getUUID())) return false;
         if (ctx.phase == Phase.WAITING || ctx.phase == Phase.ENDING) return false;

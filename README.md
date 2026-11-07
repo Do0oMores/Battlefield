@@ -1,6 +1,6 @@
-# Battlefield × BFBackpack · 第二阶段
+# Battlefield × BFBackpack · 第三阶段
 
-Minecraft 1.20.1 / Forge 47.x / Java 17。Battlefield 负责当前战局、兵种、部署和 Forge 物品；BFBackpack 负责目录、解锁、权限、改装和持久化配装。本阶段替换旧编号背包接口，不开发完整武器编辑 GUI。
+Minecraft 1.20.1 / Forge 47.x / Java 17。Battlefield 负责当前战局、兵种、部署和 Forge 物品；BFBackpack 负责目录、解锁、权限、改装和持久化配装。第三阶段新增大厅军械库和重新部署配装编辑器，两者通过同一 Forge 网络与 Bukkit Bridge 访问 BFBackpack。
 
 ## 构建与安装
 
@@ -42,7 +42,9 @@ BFBackpack 异步初始化时可返回 NOT_READY，Bridge 监听服务注册/注
 
 ## 操作与诊断
 
-保留现有地图、据点和信标选择界面。配装箭头改为四兵种，移除 1–9 号背包；客户端/服务端网络协议升级为 **7**，旧客户端会在握手时被拒绝。
+- 非对局时按 **K** 打开军械库，可在 Minecraft 控制设置中改键。选择兵种和槽位后可搜索、筛选、滚动目录，选择装备后自动保存。
+- 在重新部署界面选择兵种和出生点，通过「编辑配装」或「武器改装」进入共享编辑器。返回后刷新并验证配装，再启用部署。真实装备由原部署提交路径发放。
+- Forge 网络协议为 **8**，Forge ↔ Bukkit Bridge 协议为 **2**。升级时同时更新客户端、服务端 Mod 和 Bridge，BFBackpack 继续使用 API v3。
 
 仅管理员可用（权限等级 2）：
 
@@ -54,7 +56,7 @@ BFBackpack 异步初始化时可返回 NOT_READY，Bridge 监听服务注册/注
 /bt loadout class <player> <class>
 ```
 
-`class` 走同一受验证部署入口，要求玩家在线、已进入对局并允许部署，战斗中的存活玩家无法利用它补枪。其他命令只读。目录与附件编辑仍使用 BFBackpack 管理命令；未来 GUI 使用文档中的受信服务端桥接操作。
+`class` 走同一受验证部署入口，要求玩家在线、已进入对局并允许部署，战斗中的存活玩家无法利用它补枪。其他命令只读。服务器目录和永久解锁仍由 BFBackpack 管理。
 
 ## 验证
 
@@ -66,4 +68,4 @@ mvn -f bukkit-bridge/pom.xml clean verify
 
 GameTest 使用独立的 `build/medical-gametest-run`，不接触原服务器世界。已实际通过真实 Forge+TaCZ 的枪械/瞄准镜构造、弹药、资源快照重建，以及原始物品在玩家实体替换后的单次恢复测试。
 
-完整线程、ClassLoader 边界、部署回退、第三阶段接口和验收状态见 [集成说明](docs/BFBACKPACK-INTEGRATION.md) 与 [测试报告](docs/PHASE2-TESTS.md)。**尚未进行真实 Mohist + BFBackpack + 真人客户端端到端联调，不能据此声称完整混合服务端兼容。**
+第三阶段的界面、数据流与实机验证见 [军械库交付说明](docs/PHASE3-ARMORY.md)。原部署路径和第二阶段验证见 [集成说明](docs/BFBACKPACK-INTEGRATION.md) 与 [第二阶段测试报告](docs/PHASE2-TESTS.md)。

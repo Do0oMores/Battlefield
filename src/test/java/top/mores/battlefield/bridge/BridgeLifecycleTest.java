@@ -48,7 +48,7 @@ class BridgeLifecycleTest {
             case "disconnect"->{if((Long)a[0]==generation)disconnects++;yield null;}
             case "health"->{
                 if (failHealthAfterConnect && connected) throw new IllegalStateException("health unavailable");
-                yield "{\"apiVersion\":"+api+",\"backendProtocol\":2,\"bridgeProtocol\":1,\"generation\":"+generation+",\"connected\":"+connected+",\"ready\":"+ready+"}";
+                yield "{\"apiVersion\":"+api+",\"backendProtocol\":2,\"bridgeProtocol\":"+top.mores.battlefield.protocol.BridgeProtocol.VERSION+",\"generation\":"+generation+",\"connected\":"+connected+",\"ready\":"+ready+"}";
             }
             case "request"->response; case "getName"->"BattlefieldBridge"; case "isEnabled"->true;
             case "hashCode"->System.identityHashCode(p); case "equals"->p==a[0]; default->defaultValue(m.getReturnType());
