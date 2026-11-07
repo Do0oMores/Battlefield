@@ -28,8 +28,12 @@ public final class BridgeLifecycle extends JavaPlugin implements Listener {
     }
     private void discover() {
         BFBackpackAPI found = getServer().getServicesManager().load(BFBackpackAPI.class);
-        api = found != null && found.apiVersion() == API ? found : null;
-        register();
+        BFBackpackAPI next = found != null && found.apiVersion() == API ? found : null;
+        if (api != next) {
+            release();
+            api = next;
+        }
+        registerIfNeeded();
     }
     @EventHandler public void registered(ServiceRegisterEvent e) { if (e.getProvider().getService() == BFBackpackAPI.class) discover(); }
     @EventHandler public void unregistered(ServiceUnregisterEvent e) {
@@ -40,20 +44,28 @@ public final class BridgeLifecycle extends JavaPlugin implements Listener {
     /** Only a trusted in-process server endpoint can supply this JDK callback. Must run on Bukkit main. */
     public long connect(int bridgeProtocol, Function<String, CompletableFuture<String>> validator) {
         main(); if (bridgeProtocol != VERSION) throw new IllegalArgumentException("API_INCOMPATIBLE");
-        release(); endpoint = Objects.requireNonNull(validator); generation++; register(); return generation;
+        Objects.requireNonNull(validator);
+        if (endpoint != validator) {
+            release();
+            endpoint = validator;
+            generation++;
+        }
+        registerIfNeeded();
+        return generation;
     }
     public void disconnect(long expectedGeneration) {
         main(); if (generation != expectedGeneration) return;
         release(); endpoint = null; generation++; failPending("NOT_READY", "Forge endpoint disconnected");
     }
-    private void register() {
+    private void registerIfNeeded() {
         BFBackpackAPI backend = api; Function<String, CompletableFuture<String>> target = endpoint;
-        if (backend == null || target == null) return;
-        release(); registration = backend.registerValidators("battlefield-bridge", new Provider(backend, target));
+        if (backend == null || target == null || (registration != null && registration.active())) return;
+        registration = backend.registerValidators("battlefield-bridge", new Provider(backend, target));
     }
     public String health() {
         JsonObject state = new JsonObject(); state.addProperty("bridgeProtocol", VERSION); state.addProperty("apiVersion", API);
         state.addProperty("backendProtocol", BACKEND_PROTOCOL); state.addProperty("generation", generation);
+        state.addProperty("connected", endpoint != null);
         state.addProperty("ready", api != null && registration != null && registration.active());
         return JSON.toJson(state);
     }

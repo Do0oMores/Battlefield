@@ -41,11 +41,15 @@ class BridgeLifecycleTest {
     void drain() { while(!main.isEmpty())main.remove().run(); }
     static class Fake {
         int api=3; boolean ready=true; int connects,disconnects; long generation;
+        boolean connected, failHealthAfterConnect;
         CompletableFuture<String> response=new CompletableFuture<>();
         Object plugin() { return Proxy.newProxyInstance(getClass().getClassLoader(),new Class<?>[]{Plugin.class,Wire.class},(p,m,a)->switch(m.getName()) {
-            case "connect"->{connects++;yield ++generation;}
+            case "connect"->{connects++;connected=true;yield ++generation;}
             case "disconnect"->{if((Long)a[0]==generation)disconnects++;yield null;}
-            case "health"->"{\"apiVersion\":"+api+",\"backendProtocol\":2,\"bridgeProtocol\":1,\"generation\":"+generation+",\"ready\":"+ready+"}";
+            case "health"->{
+                if (failHealthAfterConnect && connected) throw new IllegalStateException("health unavailable");
+                yield "{\"apiVersion\":"+api+",\"backendProtocol\":2,\"bridgeProtocol\":1,\"generation\":"+generation+",\"connected\":"+connected+",\"ready\":"+ready+"}";
+            }
             case "request"->response; case "getName"->"BattlefieldBridge"; case "isEnabled"->true;
             case "hashCode"->System.identityHashCode(p); case "equals"->p==a[0]; default->defaultValue(m.getReturnType());
         }); }
@@ -64,7 +68,49 @@ class BridgeLifecycleTest {
         } drain();assertEquals(1,plugin.disconnects);
     }
     @Test void incompatibleApiIsRejectedBeforeAnyRequest() {
-        var plugin=new Fake();plugin.api=4;installed=plugin.plugin();try(var bridge=service()) {bridge.probe();drain();assertFalse(bridge.ready());assertEquals("API_INCOMPATIBLE",bridge.health());}
+        var plugin = new Fake();
+        plugin.api = 4;
+        installed = plugin.plugin();
+        try (var bridge = service()) {
+            for (int i = 0; i < 3; i++) { bridge.probe(); drain(); }
+            assertFalse(bridge.ready());
+            assertEquals("API_INCOMPATIBLE", bridge.health());
+            assertEquals(0, plugin.connects);
+        }
+    }
+    @Test void failingHealthAfterRegistrationDoesNotReconnectAndCanRecover() {
+        var plugin = new Fake();
+        plugin.failHealthAfterConnect = true;
+        installed = plugin.plugin();
+        try (var bridge = service()) {
+            bridge.probe(); drain();
+            assertTrue(bridge.health().contains("confirming bridge health (IllegalStateException)"));
+            for (int i = 0; i < 3; i++) { bridge.probe(); drain(); }
+            assertFalse(bridge.ready());
+            assertEquals(1, plugin.connects);
+
+            plugin.failHealthAfterConnect = false;
+            bridge.probe(); drain();
+            assertTrue(bridge.ready());
+            assertEquals(1, plugin.connects);
+        }
+    }
+    @Test void replacedConnectionCannotTakeBackActiveEndpointButCanReconnectAfterDisable() {
+        var plugin = new Fake();
+        installed = plugin.plugin();
+        try (var bridge = service()) {
+            bridge.probe(); drain();
+            plugin.generation++;
+            for (int i = 0; i < 3; i++) { bridge.probe(); drain(); }
+            assertFalse(bridge.ready());
+            assertEquals(1, plugin.connects);
+
+            plugin.connected = false;
+            plugin.generation++;
+            bridge.probe(); drain();
+            assertTrue(bridge.ready());
+            assertEquals(2, plugin.connects);
+        }
     }
     @Test void uninstallCancelsPendingAndLateCompletionCannotReviveConnection() {
         var plugin=new Fake();installed=plugin.plugin();try(var bridge=service()) {
