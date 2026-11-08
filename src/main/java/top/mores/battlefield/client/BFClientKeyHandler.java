@@ -20,6 +20,10 @@ public class BFClientKeyHandler {
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
+        if (BFKeyBinds.OPEN_ARMORY.consumeClick() && mc.screen == null && !ClientGameState.inBattle) {
+            mc.setScreen(new top.mores.battlefield.client.armory.ArmoryScreen());
+            return;
+        }
         if (BFKeyBinds.OPEN_RESPAWN_UI.consumeClick()) {
             if (mc.screen != null) return;
             // 不直接开界面：先问服务端能不能部署。不允许时服务端只回一条原因，不会弹空界面。

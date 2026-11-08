@@ -17,14 +17,17 @@ public final class S2CDeployResultPacket {
 
     public static final int MAX_MESSAGE = 96;
 
+    private final java.util.UUID requestId;
     private final boolean ok;
     private final String message;
 
-    public S2CDeployResultPacket(boolean ok, String message) {
+    public S2CDeployResultPacket(java.util.UUID requestId, boolean ok, String message) {
+        this.requestId = requestId;
         this.ok = ok;
         this.message = message == null ? "" : (message.length() <= MAX_MESSAGE ? message : message.substring(0, MAX_MESSAGE));
     }
 
+    public java.util.UUID requestId() { return requestId; }
     public boolean ok() {
         return ok;
     }
@@ -34,12 +37,13 @@ public final class S2CDeployResultPacket {
     }
 
     public static void encode(S2CDeployResultPacket msg, FriendlyByteBuf buf) {
+        buf.writeUUID(msg.requestId);
         buf.writeBoolean(msg.ok);
         buf.writeUtf(msg.message, MAX_MESSAGE);
     }
 
     public static S2CDeployResultPacket decode(FriendlyByteBuf buf) {
-        return new S2CDeployResultPacket(buf.readBoolean(), buf.readUtf(MAX_MESSAGE));
+        return new S2CDeployResultPacket(buf.readUUID(), buf.readBoolean(), buf.readUtf(MAX_MESSAGE));
     }
 
     public static void handle(S2CDeployResultPacket msg, Supplier<NetworkEvent.Context> ctxSup) {

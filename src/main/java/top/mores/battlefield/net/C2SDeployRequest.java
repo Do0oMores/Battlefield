@@ -1,72 +1,33 @@
 package top.mores.battlefield.net;
 
-import net.minecraft.ChatFormatting;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkEvent;
-import top.mores.battlefield.game.BattlefieldGameManager;
-
+import top.mores.battlefield.server.BackpackBridge;
+import top.mores.battlefield.protocol.SoldierClass;
+import java.util.*;
 import java.util.function.Supplier;
 
-/**
- * 客户端请求重新部署。
- * <p>
- * 包里只带「部署点稳定标识 + 配装槽位」。标识是 {@code base} / {@code point:A} /
- * {@code beacon:<uuid>} 这类服务端自己算出来的键，坐标完全由服务端按当前对局状态解析，
- * 客户端既不能指定落点，也不能凭一个旧 id 复活到已经易主的据点。
- * <p>
- * 服务端无论成功失败都会回一个 {@link S2CDeployResultPacket}：失败时界面保持打开并显示原因。
- */
-public final class C2SDeployRequest {
-
+/** Client may select a class and server-computed option, never a UUID, resource ID or quantity. */
+public record C2SDeployRequest(String optionId, SoldierClass soldierClass, UUID requestId) {
     public static final int MAX_OPTION_ID = 48;
-
-    private final String optionId;
-    private final int bpSlot; // 1..9
-    private final top.mores.battlefield.game.medical.MedicalState.Role role;
-
-    public C2SDeployRequest(String optionId, int bpSlot) {
-        this(optionId, bpSlot, top.mores.battlefield.game.medical.MedicalState.Role.ASSAULT);
-    }
-
-    public C2SDeployRequest(String optionId, int bpSlot, top.mores.battlefield.game.medical.MedicalState.Role role) {
-        this.role = role;
-        this.optionId = optionId == null ? "" : optionId;
-        this.bpSlot = bpSlot;
-    }
-
     public static void encode(C2SDeployRequest msg, FriendlyByteBuf buf) {
-        String id = msg.optionId.length() <= MAX_OPTION_ID ? msg.optionId : msg.optionId.substring(0, MAX_OPTION_ID);
-        buf.writeUtf(id, MAX_OPTION_ID);
-        buf.writeVarInt(msg.bpSlot);
-        buf.writeEnum(msg.role);
+        buf.writeUtf(msg.optionId, MAX_OPTION_ID); buf.writeUtf(msg.soldierClass.name(), 16); buf.writeUUID(msg.requestId);
     }
-
     public static C2SDeployRequest decode(FriendlyByteBuf buf) {
-        return new C2SDeployRequest(buf.readUtf(MAX_OPTION_ID), buf.readVarInt(), buf.readEnum(top.mores.battlefield.game.medical.MedicalState.Role.class));
+        return new C2SDeployRequest(buf.readUtf(MAX_OPTION_ID), SoldierClass.valueOf(buf.readUtf(16)), buf.readUUID());
     }
-
-    public static void handle(C2SDeployRequest msg, Supplier<NetworkEvent.Context> ctxSup) {
-        NetworkEvent.Context ctx = ctxSup.get();
+    public static void handle(C2SDeployRequest msg, Supplier<NetworkEvent.Context> supplier) {
+        var ctx = supplier.get();
         ctx.enqueueWork(() -> {
-            ServerPlayer sp = ctx.getSender();
-            if (sp == null) return;
-
-            BattlefieldGameManager.DeployResult result =
-                    BattlefieldGameManager.deploy(sp, msg.optionId, msg.bpSlot, msg.role);
-
-            // 阵亡部署会走 PlayerList#respawn，旧 ServerPlayer 已被替换成新实例；
-            // 结果包必须发给当前实例，否则连接虽然还能发（connection 是复用的），玩家引用已经过期。
-            ServerPlayer target = sp.server.getPlayerList().getPlayer(sp.getUUID());
-            if (target == null) return;
-
-            if (!result.ok()) {
-                target.displayClientMessage(
-                        Component.literal(result.message()).withStyle(ChatFormatting.RED), true);
-            }
-            BattlefieldNet.sendToPlayer(target, new S2CDeployResultPacket(result.ok(), result.message()));
-        });
-        ctx.setPacketHandled(true);
+            ServerPlayer sender = ctx.getSender(); if (sender == null) return;
+            var server = sender.server; UUID player = sender.getUUID();
+            BackpackBridge.deploy(sender, msg.optionId, msg.soldierClass, msg.requestId).whenComplete((result, error) -> server.execute(() -> {
+                ServerPlayer current = server.getPlayerList().getPlayer(player); if (current == null) return;
+                boolean ok = error == null && result.ok();
+                String reason = error == null ? result.code() + ": " + result.message() : "DEPLOYMENT_FAILED";
+                BattlefieldNet.sendToPlayer(current, new S2CDeployResultPacket(msg.requestId, ok, reason));
+            }));
+        }); ctx.setPacketHandled(true);
     }
 }

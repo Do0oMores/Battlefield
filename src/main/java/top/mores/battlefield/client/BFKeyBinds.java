@@ -23,9 +23,13 @@ public final class BFKeyBinds {
     public static final KeyMapping GIVE_MEDICAL = new KeyMapping("key.battlefield.give_medical",
             InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_J, CATEGORY);
 
+    public static final KeyMapping OPEN_ARMORY = new KeyMapping("key.battlefield.open_armory",
+            InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_K, CATEGORY);
+
     public static void register(RegisterKeyMappingsEvent event) {
         event.register(SELF_HEAL);
         event.register(GIVE_MEDICAL);
         event.register(OPEN_RESPAWN_UI);
+        event.register(OPEN_ARMORY);
     }
 }

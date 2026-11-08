@@ -1,0 +1,78 @@
+# 每兵种各一套配置，默认示例不会绕过实际 TaCZ 兼容校验。
+classes:
+  ASSAULT:
+    PRIMARY:
+      allow-tags: [battlefield:assault_rifle]
+      default: battlefield:ak47
+    SECONDARY:
+      allow-tags: [battlefield:pistol]
+      default: battlefield:cz75
+    GADGET_1:
+      allow-tags: [battlefield:gadget]
+      default: battlefield:ammo_station
+    GADGET_2:
+      allow-tags: [battlefield:gadget]
+      default: battlefield:beacon
+    GRENADE:
+      allow-tags: [battlefield:grenade]
+      default: battlefield:snowball
+    MELEE:
+      allow-tags: [battlefield:melee]
+      default: battlefield:sword
+  MEDIC:
+    PRIMARY:
+      allow-tags: [battlefield:smg]
+      default: battlefield:ump45
+    SECONDARY:
+      allow-tags: [battlefield:pistol]
+      default: battlefield:cz75
+    GADGET_1:
+      allow-tags: [battlefield:gadget]
+      default: battlefield:ammo_station
+    GADGET_2:
+      allow-tags: [battlefield:gadget]
+      default: battlefield:beacon
+    GRENADE:
+      allow-tags: [battlefield:grenade]
+      default: battlefield:snowball
+    MELEE:
+      allow-tags: [battlefield:melee]
+      default: battlefield:sword
+  SUPPORT:
+    PRIMARY:
+      allow-tags: [battlefield:lmg]
+      default: battlefield:m249
+    SECONDARY:
+      allow-tags: [battlefield:pistol]
+      default: battlefield:cz75
+    GADGET_1:
+      allow-tags: [battlefield:gadget]
+      default: battlefield:ammo_station
+    GADGET_2:
+      allow-tags: [battlefield:gadget]
+      default: battlefield:beacon
+    GRENADE:
+      allow-tags: [battlefield:grenade]
+      default: battlefield:snowball
+    MELEE:
+      allow-tags: [battlefield:melee]
+      default: battlefield:sword
+  RECON:
+    PRIMARY:
+      allow-tags: [battlefield:sniper]
+      default: battlefield:awp
+    SECONDARY:
+      allow-tags: [battlefield:pistol]
+      default: battlefield:cz75
+    GADGET_1:
+      allow-tags: [battlefield:gadget]
+      default: battlefield:ammo_station
+    GADGET_2:
+      allow-tags: [battlefield:gadget]
+      default: battlefield:beacon
+    GRENADE:
+      allow-tags: [battlefield:grenade]
+      default: battlefield:snowball
+    MELEE:
+      allow-tags: [battlefield:melee]
+      default: battlefield:sword
