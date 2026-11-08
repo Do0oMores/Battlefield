@@ -169,11 +169,11 @@ public final class DeployMapView {
         g.fill(x, y, x + w, y + h, 0xE6070D0A);
         DeployTheme.frame(g, x, y, x + w, y + h, DeployTheme.BORDER);
 
-        String title = "战区示意图";
+        String title = DeployText.tr("map");
         g.drawString(font, title, x + 8, y + 5, DeployTheme.TEXT_MUTED, false);
         String hint = background == null
-                ? "坐标投影 · 无底图资源"
-                : "服务端烘焙 · " + background.blocksPerPixel() + " 格/像素";
+                ? DeployText.tr("map.projection")
+                : DeployText.tr("map.baked", background.blocksPerPixel());
         int hintW = font.width(hint);
         if (x + 8 + font.width(title) + 10 + hintW < x + w - 8) {
             g.drawString(font, hint, x + w - hintW - 8, y + 5, DeployTheme.TEXT_DIM, false);
@@ -337,16 +337,16 @@ public final class DeployMapView {
 
         DeployTheme.diamond(g, sx, sy, 3, 0xFFFFFFFF);
         DeployTheme.diamondOutline(g, sx, sy, 4, 0xC0000000);
-        g.drawString(Minecraft.getInstance().font, "你", sx + 5, sy - 4, 0xFFFFFFFF, true);
+        g.drawString(Minecraft.getInstance().font, DeployText.tr("map.you"), sx + 5, sy - 4, 0xFFFFFFFF, true);
     }
 
     private void drawLegend(GuiGraphics g, Font font) {
         int legendY = y + h - 13;
         int cx = x + 8;
-        cx = legend(g, font, cx, legendY, DeployTheme.ATTACKER, "攻方");
-        cx = legend(g, font, cx, legendY, DeployTheme.DEFENDER, "守方");
-        cx = legend(g, font, cx, legendY, DeployTheme.ACCENT, "可部署");
-        legend(g, font, cx, legendY, DeployTheme.DANGER, "不可用");
+        cx = legend(g, font, cx, legendY, DeployTheme.ATTACKER, DeployText.tr("attackers"));
+        cx = legend(g, font, cx, legendY, DeployTheme.DEFENDER, DeployText.tr("defenders"));
+        cx = legend(g, font, cx, legendY, DeployTheme.ACCENT, DeployText.tr("available"));
+        legend(g, font, cx, legendY, DeployTheme.DANGER, DeployText.tr("unavailable"));
     }
 
     private int legend(GuiGraphics g, Font font, int x0, int y0, int color, String text) {

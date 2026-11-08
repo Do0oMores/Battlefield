@@ -17,6 +17,7 @@ foreach($artifact in @($modJar,$bridgeJar)) {
         if($entries | Where-Object {$_ -match '^(org/bukkit/|top/mores/bFBackpack/)|GameTests\.class$|/FakePlayer'}) {throw "Unexpected API/runtime/test classes in $artifact"}
         if($artifact -eq $modJar -and ($entries | Where-Object {$_ -like 'top/mores/battlefield/bukkit/*'})) {throw 'Bukkit implementation leaked into Forge artifact'}
         if($artifact -eq $bridgeJar -and -not ($entries -contains 'plugin.yml')) {throw 'Bridge plugin.yml missing'}
+        if($artifact -eq $bridgeJar -and ($entries | Where-Object {$_ -like 'top/mores/battlefield/protocol/*'})) {throw 'Shared protocol classes must be relocated in the bridge JAR'}
     } finally {$zip.Dispose()}
 }
 & (Join-Path $JavaHome 'bin/javac.exe') -encoding UTF-8 -proc:none -cp $backend -d $output (Join-Path $PSScriptRoot 'VerifyExampleCatalog.java')

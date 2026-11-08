@@ -11,6 +11,6 @@
   <build><plugins>
     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.2.5</version></plugin>
-    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.5.3</version><executions><execution><phase>package</phase><goals><goal>shade</goal></goals><configuration><createDependencyReducedPom>false</createDependencyReducedPom><relocations><relocation><pattern>com.google.gson</pattern><shadedPattern>top.mores.battlefield.bukkit.internal.gson</shadedPattern></relocation></relocations></configuration></execution></executions></plugin>
+    <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.5.3</version><executions><execution><phase>package</phase><goals><goal>shade</goal></goals><configuration><createDependencyReducedPom>false</createDependencyReducedPom><relocations><relocation><pattern>com.google.gson</pattern><shadedPattern>top.mores.battlefield.bukkit.internal.gson</shadedPattern></relocation><relocation><pattern>top.mores.battlefield.protocol</pattern><shadedPattern>top.mores.battlefield.bukkit.internal.protocol</shadedPattern></relocation></relocations></configuration></execution></executions></plugin>
   </plugins></build>
 </project>

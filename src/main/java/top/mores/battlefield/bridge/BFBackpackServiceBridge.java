@@ -62,7 +62,7 @@ public final class BFBackpackServiceBridge implements AutoCloseable {
                             return;
                         }
                     }
-                    health = flag(status, "ready") ? "OK: API=3 protocol=2 bridge=1" : "NOT_READY: backend initializing/unregistered";
+                    health = flag(status, "ready") ? "OK: API=3 protocol=2 bridge=" + VERSION : "NOT_READY: backend initializing/unregistered";
                     // A replaced API is rebound by the Bukkit service listener, without retaining its old loader.
                 } catch (ReflectiveOperationException | RuntimeException | LinkageError e) { probeFailed(step, e); }
                 finally { probing = false; }

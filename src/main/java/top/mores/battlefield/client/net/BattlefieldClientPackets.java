@@ -8,6 +8,7 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import org.joml.Vector3f;
 import top.mores.battlefield.client.ClientGameState;
+import top.mores.battlefield.client.armory.ArmoryScreen;
 import top.mores.battlefield.client.DeployPreviewClientState;
 import top.mores.battlefield.client.deploy.DeployMapTexture;
 import top.mores.battlefield.client.ui.RedeployScreen;
@@ -40,20 +41,22 @@ public final class BattlefieldClientPackets {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
 
+        RedeployScreen active = mc.screen instanceof RedeployScreen screen ? screen
+                : mc.screen instanceof ArmoryScreen armory ? armory.deploymentScreen() : null;
         if (!msg.showScreen()) {
-            if (mc.screen instanceof RedeployScreen screen) {
-                screen.closeFromServer();
+            if (active != null) {
+                active.closeFromServer();
                 return;
             }
-            String reason = msg.data().denyReason();
+            String reason = top.mores.battlefield.client.deploy.DeployText.denial(msg.data());
             if (!reason.isBlank()) {
                 mc.player.displayClientMessage(Component.literal(reason).withStyle(ChatFormatting.YELLOW), true);
             }
             return;
         }
 
-        if (mc.screen instanceof RedeployScreen screen) {
-            screen.applyData(msg.data());
+        if (active != null) {
+            active.applyData(msg.data());
             return;
         }
         if (mc.screen == null || mc.screen instanceof DeathScreen) {
@@ -73,9 +76,8 @@ public final class BattlefieldClientPackets {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return;
         if (!DeployMapTexture.apply(msg)) return;
-        if (mc.screen instanceof RedeployScreen screen) {
-            screen.onMapArrived();
-        }
+        if (mc.screen instanceof RedeployScreen screen) screen.onMapArrived();
+        if (mc.screen instanceof ArmoryScreen armory && armory.deploymentScreen() != null) armory.deploymentScreen().onMapArrived();
     }
 
     public static void handleGameState(S2CGameStatePacket msg) {

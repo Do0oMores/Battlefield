@@ -98,6 +98,22 @@ public final class TaczResourceValidator implements AutoCloseable {
             return future.exceptionally(e -> compatibility("UNVERIFIED", "VALIDATION_TIMEOUT", "Forge validation timed out"));
         } catch (RuntimeException e) { return result("REJECTED", "INVALID_INPUT", "Malformed validation request"); }
     }
+    public String armoryWeaponStatus(LoadoutDto.Weapon weapon) {
+        Index current = index;
+        if (!current.ready() || closed) return "PROVIDER_UNAVAILABLE";
+        return Objects.requireNonNullElse(checkWeapon(current, weapon), "OK");
+    }
+
+    public String armoryAttachmentStatus(LoadoutDto.Weapon weapon, String attachment, String type) {
+        String status = armoryWeaponStatus(weapon);
+        if (!status.equals("OK")) return status;
+        Index current = index;
+        if (!current.attachments().containsKey(attachment)) return "RESOURCE_NOT_FOUND";
+        Gun gun = current.guns().get(weapon.resource());
+        return gun != null && type.equals(current.attachments().get(attachment))
+                && gun.types().contains(type) && gun.allowed().contains(attachment) ? "OK" : "ATTACHMENT_INVALID";
+    }
+
     private String checkWeapon(Index i, LoadoutDto.Weapon w) {
         return switch (w.provider()) {
             case "TACZ", "TACZ_GUN" -> {

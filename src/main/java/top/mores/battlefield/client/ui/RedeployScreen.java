@@ -5,27 +5,33 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 import top.mores.battlefield.client.ClientGameState;
-import top.mores.battlefield.client.DeployPreviewClientState;
+import top.mores.battlefield.armory.ArmoryView;
+import top.mores.battlefield.client.armory.ArmoryClientState;
+import top.mores.battlefield.client.armory.ArmoryScreen;
+import top.mores.battlefield.client.armory.ArmoryTheme;
+import top.mores.battlefield.protocol.EquipmentSlot;
+import top.mores.battlefield.protocol.SoldierClass;
 import top.mores.battlefield.client.deploy.DeployClientState;
 import top.mores.battlefield.client.deploy.DeployHeaderModel;
 import top.mores.battlefield.client.deploy.DeployMapTexture;
 import top.mores.battlefield.client.deploy.DeployMapView;
 import top.mores.battlefield.client.deploy.DeployTheme;
+import top.mores.battlefield.client.deploy.DeployText;
 import top.mores.battlefield.deploy.DeploymentData;
 import top.mores.battlefield.deploy.DeploymentOption;
 import top.mores.battlefield.net.BattlefieldNet;
 import top.mores.battlefield.net.C2SDeployRequest;
-import top.mores.battlefield.net.C2SRequestBackpackPreview;
 import top.mores.battlefield.net.C2SRequestDeployData;
 import top.mores.battlefield.net.C2SRequestDeployMap;
 import top.mores.battlefield.net.S2CSectorAreaPacket;
 
 import java.util.List;
+
+import static top.mores.battlefield.client.deploy.DeployText.tr;
 
 /**
  * 重新部署界面（战地风格战术终端）。
@@ -46,8 +52,6 @@ public class RedeployScreen extends Screen {
     private static final int ROW_GAP = 2;
     private static final int GAP = 6;
     private static final int MARGIN = 8;
-    private static final int SLOT = 18;
-    private static final int SLOT_GAP = 2;
     private static final int REFRESH_INTERVAL_TICKS = 40;
     private static final int SEND_TIMEOUT_TICKS = 120;
 
@@ -86,9 +90,21 @@ public class RedeployScreen extends Screen {
     private Rect closeBtn = Rect.EMPTY;
     private Rect bpPrev = Rect.EMPTY;
     private Rect bpNext = Rect.EMPTY;
+    private Rect editLoadout = Rect.EMPTY;
+    private Rect editAttachments = Rect.EMPTY;
+    private final ArmoryClientState armory = new ArmoryClientState(true, BattlefieldNet::sendToServer);
+
+    public ArmoryClientState armory() { return armory; }
+
+    public void armoryClosed(SoldierClass selected) {
+        selectedRole = selected;
+        DeployClientState.soldierClass(selected);
+        requestArmory();
+        armory.refresh();
+    }
 
     public RedeployScreen(DeploymentData initial) {
-        super(Component.literal("重新部署"));
+        super(Component.translatable("battlefield.deploy.title"));
         this.data = initial == null ? DeploymentData.CLOSED : initial;
         this.header = DeployHeaderModel.build(this.data);
         this.selectedRole = DeployClientState.soldierClass();
@@ -108,7 +124,7 @@ public class RedeployScreen extends Screen {
         keepSelectionValid(false);
         requestData();
         requestMapIfNeeded();
-        requestPreview();
+        requestArmory();
         lastPhase = ClientGameState.phase;
         lastSector = ClientGameState.sectorIndex;
     }
@@ -126,16 +142,17 @@ public class RedeployScreen extends Screen {
             return;
         }
         if (ClientGameState.phase == 3) {
-            notice("对局已结束，无法部署", DeployTheme.WARN);
+            notice(tr("deny.ended"), DeployTheme.WARN);
             onClose();
             return;
         }
+        if (!sending) armory.tick();
         if (localWaitTicks > 0) localWaitTicks--;
         if (noticeTicks > 0) noticeTicks--;
 
         if (sending && ++sendingTicks > SEND_TIMEOUT_TICKS) {
             sending = false;
-            notice("服务器未响应，请重试", DeployTheme.WARN);
+            notice(tr("timeout"), DeployTheme.WARN);
         }
         if (sending) return;
 
@@ -203,9 +220,11 @@ public class RedeployScreen extends Screen {
             onClose();
             return;
         }
-        notice(message == null || message.isBlank() ? "部署失败" : message, DeployTheme.DANGER);
+        String failure = message == null ? "" : message.split(":", 2)[0];
+        notice(failure.isBlank() ? tr("failed") : tr("failed_reason", ArmoryTheme.status(failure).getString()), DeployTheme.DANGER);
         refreshTicks = 0;
         requestData();
+        armory.refresh();
     }
 
     /** 界面被服务端要求关闭（离局、结算、数据失效）。 */
@@ -217,8 +236,8 @@ public class RedeployScreen extends Screen {
         BattlefieldNet.sendToServer(new C2SRequestDeployData());
     }
 
-    private void requestPreview() {
-        BattlefieldNet.sendToServer(new C2SRequestBackpackPreview(selectedRole));
+    private void requestArmory() {
+        armory.focus(selectedRole, "");
     }
 
     /**
@@ -238,10 +257,10 @@ public class RedeployScreen extends Screen {
         DeploymentOption previous = data.find(selectedId);
         if (selectedId != null && !selectedId.isBlank()) {
             if (previous == null) {
-                if (notify) notice("所选部署点已失效", DeployTheme.WARN);
+                if (notify) notice(tr("expired"), DeployTheme.WARN);
                 selectedId = "";
             } else if (!previous.selectable()) {
-                if (notify) notice("所选部署点已不可用：" + previous.detail(), DeployTheme.WARN);
+                if (notify) notice(tr("option_denied", DeployText.detail(previous)), DeployTheme.WARN);
                 selectedId = "";
             }
         }
@@ -325,9 +344,11 @@ public class RedeployScreen extends Screen {
         deployBtn = new Rect(bottomBar.x2() - btnW - 6, bottomBar.y1() + 10, bottomBar.x2() - 6, bottomBar.y1() + 10 + btnH);
         closeBtn = new Rect(deployBtn.x1() - 58, deployBtn.y1(), deployBtn.x1() - 6, deployBtn.y2());
 
-        int bpY = rightPanel.y1() + 62;
+        int bpY = rightPanel.y1() + 17;
         bpPrev = new Rect(rightPanel.x1() + 8, bpY, rightPanel.x1() + 24, bpY + 12);
         bpNext = new Rect(rightPanel.x2() - 24, bpY, rightPanel.x2() - 8, bpY + 12);
+        editLoadout = new Rect(rightPanel.x1() + 5, bpY + 17, rightPanel.x2() - 5, bpY + 33);
+        editAttachments = new Rect(rightPanel.x1() + 5, bpY + 36, rightPanel.x2() - 5, bpY + 52);
     }
 
     private static int clamp(int v, int min, int max) {
@@ -361,14 +382,14 @@ public class RedeployScreen extends Screen {
         int modeW = font.width(header.mode());
         g.drawString(font, "/ " + header.map(), x + modeW + 6, topBar.y1() + 7, DeployTheme.TEXT, false);
 
-        String teamText = data.team() == 0 ? "攻方" : data.team() == 1 ? "守方" : "观战";
+        String teamText = tr(data.team() == 0 ? "attackers" : data.team() == 1 ? "defenders" : "spectator");
         int teamColor = DeployTheme.teamColor(data.team());
-        g.drawString(font, "你的阵营", x, topBar.y1() + 22, DeployTheme.TEXT_DIM, false);
-        g.drawString(font, teamText, x + font.width("你的阵营") + 6, topBar.y1() + 22, teamColor, true);
+        g.drawString(font, tr("your_team"), x, topBar.y1() + 22, DeployTheme.TEXT_DIM, false);
+        g.drawString(font, teamText, x + font.width(tr("your_team")) + 6, topBar.y1() + 22, teamColor, true);
 
         String sector = header.sector();
         if (!sector.isBlank()) {
-            int sx = x + font.width("你的阵营") + 6 + font.width(teamText) + 12;
+            int sx = x + font.width(tr("your_team")) + 6 + font.width(teamText) + 12;
             int maxW = Math.max(0, topBar.x1() + 200 - sx);
             if (maxW > 30) {
                 g.drawString(font, DeployTheme.trim(font, sector, maxW),
@@ -392,15 +413,15 @@ public class RedeployScreen extends Screen {
     private void renderOptionList(GuiGraphics g, int mouseX, int mouseY) {
         DeployTheme.panel(g, listPanel.x1(), listPanel.y1(), listPanel.x2(), listPanel.y2());
 
-        DeployTheme.sectionTitle(g, font, "部署位置", listPanel.x1() + 8, listPanel.y1() + 6, DeployTheme.ACCENT);
-        String count = data.options().size() + " 处";
+        DeployTheme.sectionTitle(g, font, tr("locations"), listPanel.x1() + 8, listPanel.y1() + 6, DeployTheme.ACCENT);
+        String count = tr("count", data.options().size());
         g.drawString(font, count, listPanel.x2() - 8 - font.width(count), listPanel.y1() + 6, DeployTheme.TEXT_DIM, false);
 
         List<DeploymentOption> options = data.options();
         if (options.isEmpty()) {
-            g.drawString(font, "当前没有可用部署点", listPanel.x1() + 8, listPanel.y1() + 26, DeployTheme.WARN, false);
+            g.drawString(font, tr("empty"), listPanel.x1() + 8, listPanel.y1() + 26, DeployTheme.WARN, false);
             if (!data.denyReason().isBlank()) {
-                g.drawString(font, data.denyReason(), listPanel.x1() + 8, listPanel.y1() + 40, DeployTheme.TEXT_DIM, false);
+                g.drawString(font, DeployText.denial(data), listPanel.x1() + 8, listPanel.y1() + 40, DeployTheme.TEXT_DIM, false);
             }
             return;
         }
@@ -451,9 +472,9 @@ public class RedeployScreen extends Screen {
         String state = DeployTheme.stateLabel(option.state());
         int chipW = font.width(state) + 6;
         int textW = Math.max(20, row.x2() - textX - chipW - 6);
-        g.drawString(font, DeployTheme.trim(font, option.name(), textW),
+        g.drawString(font, DeployTheme.trim(font, DeployText.name(option), textW),
                 textX, row.y1() + 4, option.selectable() ? DeployTheme.TEXT : DeployTheme.TEXT_MUTED, false);
-        g.drawString(font, DeployTheme.trim(font, option.detail(), Math.max(20, row.x2() - textX - 6)),
+        g.drawString(font, DeployTheme.trim(font, DeployText.detail(option), Math.max(20, row.x2() - textX - 6)),
                 textX, row.y1() + 16, stateColor, false);
 
         int chipX = row.x2() - font.width(state) - 10;
@@ -480,73 +501,45 @@ public class RedeployScreen extends Screen {
 
     private void renderSoldierPanel(GuiGraphics g, int mouseX, int mouseY) {
         DeployTheme.panel(g, rightPanel.x1(), rightPanel.y1(), rightPanel.x2(), rightPanel.y2());
-        DeployTheme.sectionTitle(g, font, "士兵配置", rightPanel.x1() + 8, rightPanel.y1() + 6, DeployTheme.ACCENT);
-
-        int x = rightPanel.x1() + 8;
-        int y = rightPanel.y1() + 22;
-        g.drawString(font, "兵种", x, y, DeployTheme.TEXT_DIM, false);
-        String roleName = net.minecraft.client.resources.language.I18n.get("role.battlefield." + selectedRole.name().toLowerCase(java.util.Locale.ROOT));
-        g.drawString(font, "< " + roleName + " >", x + 34, y, DeployTheme.ACCENT, false);
-
-        int lineY = rightPanel.y1() + 38;
-        g.fill(rightPanel.x1() + 8, lineY, rightPanel.x2() - 8, lineY + 1, DeployTheme.BORDER);
-
-        g.drawString(font, "配装", x, rightPanel.y1() + 48, DeployTheme.TEXT_DIM, false);
-        DeployTheme.button(g, font, bpPrev.x1(), bpPrev.y1(), bpPrev.x2(), bpPrev.y2(), "<",
-                DeployTheme.ACCENT, true, bpPrev.contains(mouseX, mouseY), pressedButton.equals("bpPrev"));
-        DeployTheme.button(g, font, bpNext.x1(), bpNext.y1(), bpNext.x2(), bpNext.y2(), ">",
-                DeployTheme.ACCENT, true, bpNext.contains(mouseX, mouseY), pressedButton.equals("bpNext"));
-        String slotLabel = "当前兵种配装";
-        g.drawString(font, slotLabel,
-                (bpPrev.x2() + bpNext.x1()) / 2 - font.width(slotLabel) / 2,
-                bpPrev.y1() + 2, DeployTheme.TEXT, false);
-
-        renderItemGrid(g, mouseX, mouseY);
-
-        boolean hasPreview = !DeployPreviewClientState.getPreview(selectedRole).isEmpty();
-        int noteW = rightPanel.w() - 16;
-        if (hasPreview) {
-            g.drawString(font, DeployTheme.trim(font, "装备来自 BFBackpack", noteW),
-                    x, rightPanel.y2() - 14, DeployTheme.TEXT_DIM, false);
-        } else {
-            // 两行，避免窄面板把「背包插件未响应」截掉一半
-            g.drawString(font, DeployTheme.trim(font, "无配装数据", noteW),
-                    x, rightPanel.y2() - 24, DeployTheme.TEXT_DIM, false);
-            g.drawString(font, DeployTheme.trim(font, DeployPreviewClientState.status(selectedRole), noteW),
-                    x, rightPanel.y2() - 14, DeployTheme.TEXT_DIM, false);
+        int x = rightPanel.x1() + 6, w = rightPanel.w() - 12;
+        ArmoryTheme.text(g, font, ArmoryTheme.label("equipment"), x, rightPanel.y1() + 5, w, DeployTheme.ACCENT);
+        var role = Component.translatable("role.battlefield." + selectedRole.name().toLowerCase(java.util.Locale.ROOT));
+        ArmoryTheme.text(g, font, role, bpPrev.x2() + 3, bpPrev.y1() + 2, bpNext.x1() - bpPrev.x2() - 6, DeployTheme.TEXT);
+        drawArmoryButton(g, bpPrev, Component.literal("<"), !sending, mouseX, mouseY);
+        drawArmoryButton(g, bpNext, Component.literal(">"), !sending, mouseX, mouseY);
+        drawArmoryButton(g, editLoadout, ArmoryTheme.label("edit"), !sending, mouseX, mouseY);
+        if (editAttachments.y2() < rightPanel.y2() - 11) {
+            drawArmoryButton(g, editAttachments, ArmoryTheme.label("customize"), !sending && primaryWeapon() != null, mouseX, mouseY);
         }
+        int y = editAttachments.y2() + 6;
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            if (y >= rightPanel.y2() - 22) break;
+            var item = equipment(slot);
+            var name = item == null ? ArmoryTheme.label("unconfigured") : Component.literal(item.name());
+            var line = ArmoryTheme.label("slot_item", ArmoryTheme.label("slot." + slot.name()), name);
+            ArmoryTheme.text(g, font, line, x, y, w, slot == EquipmentSlot.PRIMARY ? DeployTheme.TEXT : DeployTheme.TEXT_DIM);
+            y += 11;
+        }
+        ArmoryTheme.text(g, font, ArmoryTheme.status(armory.status()), x, rightPanel.y2() - 11, w, DeployTheme.TEXT_DIM);
     }
 
-    private void renderItemGrid(GuiGraphics g, int mouseX, int mouseY) {
-        List<ItemStack> preview = DeployPreviewClientState.getPreview(selectedRole);
-        int gridX = rightPanel.x1() + 8;
-        int gridY = rightPanel.y1() + 80;
-        int cell = SLOT + SLOT_GAP;
+    private ArmoryView.Entry equipment(EquipmentSlot slot) {
+        var view = armory.view();
+        if (view == null) return null;
+        String id = view.equipped().get(slot);
+        return view.entries().stream().filter(entry -> entry.id().equals(id)).findFirst().orElse(null);
+    }
 
-        int cols = 3;
-        int maxRows = Math.max(1, (rightPanel.y2() - 20 - gridY) / cell);
-        if (maxRows < 3) cols = 3;
+    private ArmoryView.Entry primaryWeapon() {
+        var entry = equipment(EquipmentSlot.PRIMARY);
+        return entry != null && entry.customizable() && entry.selectable() ? entry : null;
+    }
 
-        for (int i = 0; i < 9; i++) {
-            int col = i % cols;
-            int row = i / cols;
-            if (row >= maxRows) break;
-            int sx = gridX + col * cell;
-            int sy = gridY + row * cell;
-
-            g.fill(sx, sy, sx + SLOT, sy + SLOT, 0x70101814);
-            DeployTheme.frame(g, sx, sy, sx + SLOT, sy + SLOT, DeployTheme.BORDER);
-
-            ItemStack stack = i < preview.size() ? preview.get(i) : ItemStack.EMPTY;
-            if (!stack.isEmpty()) {
-                g.renderItem(stack, sx + 1, sy + 1);
-                g.renderItemDecorations(font, stack, sx + 1, sy + 1);
-            }
-            if (mouseX >= sx && mouseX < sx + SLOT && mouseY >= sy && mouseY < sy + SLOT && !stack.isEmpty()) {
-                DeployTheme.frame(g, sx, sy, sx + SLOT, sy + SLOT, DeployTheme.ACCENT);
-                g.renderTooltip(font, stack, mouseX, mouseY);
-            }
-        }
+    private void drawArmoryButton(GuiGraphics g, Rect button, Component label, boolean enabled, int mx, int my) {
+        if (button.y2() >= rightPanel.y2() - 9) return;
+        DeployTheme.button(g, font, button.x1(), button.y1(), button.x2(), button.y2(),
+                DeployTheme.trim(font, label.getString(), button.w() - 4), DeployTheme.ACCENT,
+                enabled, button.contains(mx, my), false);
     }
 
     private void renderBottomBar(GuiGraphics g, int mouseX, int mouseY) {
@@ -557,34 +550,41 @@ public class RedeployScreen extends Screen {
         int y = bottomBar.y1() + 8;
         int textLimit = Math.max(40, closeBtn.x1() - x - 10);
 
-        g.drawString(font, "已选", x, y, DeployTheme.TEXT_DIM, false);
-        String name = selected == null ? "尚未选择" : selected.name();
-        String trimmedName = DeployTheme.trim(font, name, textLimit - 26);
-        g.drawString(font, trimmedName, x + 22, y, selected == null ? DeployTheme.TEXT_MUTED : DeployTheme.TEXT, true);
+        g.drawString(font, tr("selected"), x, y, DeployTheme.TEXT_DIM, false);
+        String name = selected == null ? tr("none") : DeployText.name(selected);
+        int selectionLabel = font.width(tr("selected")) + 6;
+        String trimmedName = DeployTheme.trim(font, name, textLimit - selectionLabel);
+        g.drawString(font, trimmedName, x + selectionLabel, y, selected == null ? DeployTheme.TEXT_MUTED : DeployTheme.TEXT, true);
         if (selected != null) {
             DeployTheme.chip(g, font, DeployTheme.stateLabel(selected.state()),
-                    x + 22 + font.width(trimmedName) + 8, y - 2, DeployTheme.stateColor(selected.state()));
+                    x + selectionLabel + font.width(trimmedName) + 8, y - 2, DeployTheme.stateColor(selected.state()));
         }
 
         String status = statusLine(selected);
         int statusColor = statusColor(selected);
         g.drawString(font, DeployTheme.trim(font, status, textLimit), x, y + 14, statusColor, false);
 
-        boolean canSend = !sending && data.canDeploy() && selected != null && selected.selectable();
-        String label = sending ? "部署中…"
-                : (!data.canDeploy() && localWaitTicks > 0) ? "等待 " + ((localWaitTicks + 19) / 20) + "s"
-                : "DEPLOY 部署";
+        boolean canSend = !sending && armory.readyToDeploy() && data.canDeploy() && selected != null && selected.selectable();
+        String label = sending ? ArmoryTheme.label("validating").getString()
+                : (!data.canDeploy() && localWaitTicks > 0) ? tr("wait", (localWaitTicks + 19) / 20)
+                : ArmoryTheme.label("deploy").getString();
         DeployTheme.button(g, font, deployBtn.x1(), deployBtn.y1(), deployBtn.x2(), deployBtn.y2(),
                 label, DeployTheme.ACCENT, canSend, deployBtn.contains(mouseX, mouseY), pressedButton.equals("deploy"));
         DeployTheme.button(g, font, closeBtn.x1(), closeBtn.y1(), closeBtn.x2(), closeBtn.y2(),
-                "返回", DeployTheme.TEXT_MUTED, true, closeBtn.contains(mouseX, mouseY), pressedButton.equals("close"));
+                tr("back"), DeployTheme.TEXT_MUTED, true, closeBtn.contains(mouseX, mouseY), pressedButton.equals("close"));
     }
 
     private String statusLine(@Nullable DeploymentOption selected) {
-        if (!data.canDeploy() && !data.denyReason().isBlank()) return data.denyReason();
-        if (selected == null) return "从左侧列表或地图上选择一个部署点";
-        if (!selected.selectable()) return "该位置当前不可部署：" + selected.detail();
-        return "服务端将重新校验后执行部署";
+        if (!data.canDeploy() && !data.denyReason().isBlank()) return DeployText.denial(data);
+        if (selected == null) return tr("pick_location");
+        if (!selected.selectable()) return tr("option_denied", DeployText.detail(selected));
+        if (sending) return ArmoryTheme.label("validating").getString();
+        if (armory.busy()) return ArmoryTheme.status(armory.status()).getString();
+        if (!armory.readyToDeploy()) {
+            var view = armory.view();
+            return ArmoryTheme.status(view == null ? armory.status() : view.deployment()).getString();
+        }
+        return ArmoryTheme.label("deploy_ready").getString();
     }
 
     private int statusColor(@Nullable DeploymentOption selected) {
@@ -611,8 +611,8 @@ public class RedeployScreen extends Screen {
         DeploymentOption option = data.find(id);
         if (option == null) return;
 
-        String line1 = option.name() + " · " + DeployTheme.stateLabel(option.state());
-        String line2 = option.detail();
+        String line1 = DeployText.name(option) + " · " + DeployTheme.stateLabel(option.state());
+        String line2 = DeployText.detail(option);
         String line3 = distanceLabel(option);
         int maxLineW = Math.min(220, mapPanel.w() - 12);
         line1 = DeployTheme.trim(font, line1, maxLineW);
@@ -640,7 +640,7 @@ public class RedeployScreen extends Screen {
         if (pos == null) return "";
         double dist = Math.sqrt(Math.pow(pos.x - option.x(), 2) + Math.pow(pos.z - option.z(), 2));
         if (!Double.isFinite(dist)) return "";
-        return "距离 " + Math.round(dist) + " 格";
+        return tr("distance", Math.round(dist));
     }
 
     private void notice(String text, int color) {
@@ -659,9 +659,13 @@ public class RedeployScreen extends Screen {
         int mx = (int) mouseX;
         int my = (int) mouseY;
 
-        if (mx >= rightPanel.x1() + 34 && mx < rightPanel.x2() - 8
-                && my >= rightPanel.y1() + 19 && my <= rightPanel.y1() + 34 && !sending) {
-            changeBackpack(1);
+        if (!sending && editLoadout.y2() < rightPanel.y2() - 9 && editLoadout.contains(mx, my)) {
+            minecraft.setScreen(new ArmoryScreen(this, armory, selectedRole, null));
+            return true;
+        }
+        if (!sending && editAttachments.y2() < rightPanel.y2() - 11 && editAttachments.contains(mx, my)) {
+            var weapon = primaryWeapon();
+            if (weapon != null) minecraft.setScreen(new ArmoryScreen(this, armory, selectedRole, weapon));
             return true;
         }
         if (deployBtn.contains(mx, my)) {
@@ -745,7 +749,8 @@ public class RedeployScreen extends Screen {
             case GLFW.GLFW_KEY_R -> {
                 refreshTicks = 0;
                 requestData();
-                notice("已请求刷新", DeployTheme.TEXT_MUTED);
+                armory.refresh();
+                notice(tr("refresh_requested"), DeployTheme.TEXT_MUTED);
                 return true;
             }
             default -> {
@@ -756,18 +761,23 @@ public class RedeployScreen extends Screen {
 
     private void tryDeploy() {
         if (sending) return;
+        if (!armory.readyToDeploy()) {
+            notice(statusLine(data.find(selectedId)), DeployTheme.WARN);
+            if (!armory.busy()) armory.refresh();
+            return;
+        }
 
         DeploymentOption selected = data.find(selectedId);
         if (selected == null) {
-            notice("请先选择部署点", DeployTheme.WARN);
+            notice(tr("pick_location"), DeployTheme.WARN);
             return;
         }
         if (!selected.selectable()) {
-            notice("该位置不可部署：" + selected.detail(), DeployTheme.DANGER);
+            notice(tr("option_denied", DeployText.detail(selected)), DeployTheme.DANGER);
             return;
         }
         if (!data.canDeploy()) {
-            notice(data.denyReason().isBlank() ? "当前无法部署" : data.denyReason(), DeployTheme.DANGER);
+            notice(data.denyReason().isBlank() ? tr("failed") : DeployText.denial(data), DeployTheme.DANGER);
             return;
         }
 
@@ -783,7 +793,7 @@ public class RedeployScreen extends Screen {
         Minecraft mc = Minecraft.getInstance();
         // 阵亡状态下关闭界面会让玩家没有任何入口可以复活，所以这里只提示不关闭
         if (mc.player != null && !mc.player.isAlive() && ClientGameState.phase != 1) {
-            notice("阵亡后需要选择部署点才能重返战场", DeployTheme.WARN);
+            notice(tr("death_prompt"), DeployTheme.WARN);
             return;
         }
         onClose();
@@ -794,7 +804,7 @@ public class RedeployScreen extends Screen {
         var classes = top.mores.battlefield.protocol.SoldierClass.values();
         selectedRole = classes[Math.floorMod(selectedRole.ordinal() + delta, classes.length)];
         DeployClientState.soldierClass(selectedRole);
-        requestPreview();
+        requestArmory();
     }
     private int rowAt(int mouseX, int mouseY) {
         if (!listPanel.contains(mouseX, mouseY)) return -1;
